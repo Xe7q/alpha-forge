@@ -50,13 +50,13 @@ interface PriceAlert {
   createdAt: Date
 }
 
-// Mock Data
-const MOCK_POSITIONS: Position[] = [
-  { id: '1', ticker: 'AAPL', name: 'Apple Inc.', shares: 100, avgPrice: 175.50, currentPrice: 185.25, sector: 'Technology', type: 'stock' },
-  { id: '2', ticker: 'MSFT', name: 'Microsoft Corp.', shares: 50, avgPrice: 380.00, currentPrice: 412.75, sector: 'Technology', type: 'stock' },
-  { id: '3', ticker: 'NVDA', name: 'NVIDIA Corp.', shares: 25, avgPrice: 480.00, currentPrice: 725.50, sector: 'Technology', type: 'stock' },
-  { id: '4', ticker: 'BTC', name: 'Bitcoin', shares: 0.5, avgPrice: 42000, currentPrice: 51250, sector: 'Crypto', type: 'crypto' },
-  { id: '5', ticker: 'SPY', name: 'SPDR S&P 500 ETF', shares: 200, avgPrice: 445.00, currentPrice: 478.25, sector: 'ETF', type: 'etf' },
+// No mock prices - must fetch from API
+const INITIAL_POSITIONS: Position[] = [
+  { id: '1', ticker: 'AAPL', name: 'Apple Inc.', shares: 100, avgPrice: 175.50, currentPrice: 0, sector: 'Technology', type: 'stock' },
+  { id: '2', ticker: 'MSFT', name: 'Microsoft Corp.', shares: 50, avgPrice: 380.00, currentPrice: 0, sector: 'Technology', type: 'stock' },
+  { id: '3', ticker: 'NVDA', name: 'NVIDIA Corp.', shares: 25, avgPrice: 480.00, currentPrice: 0, sector: 'Technology', type: 'stock' },
+  { id: '4', ticker: 'BTC', name: 'Bitcoin', shares: 0.5, avgPrice: 42000, currentPrice: 0, sector: 'Crypto', type: 'crypto' },
+  { id: '5', ticker: 'SPY', name: 'SPDR S&P 500 ETF', shares: 200, avgPrice: 445.00, currentPrice: 0, sector: 'ETF', type: 'etf' },
 ]
 
 const MOCK_NEWS: NewsItem[] = [
@@ -88,13 +88,17 @@ const Card: React.FC<{ children: React.ReactNode; className?: string }> = ({ chi
   </div>
 )
 
-const Metric: React.FC<{ label: string; value: string; change?: number; prefix?: string }> = ({ 
-  label, value, change, prefix = '' 
+const Metric: React.FC<{ label: string; value: string; change?: number; prefix?: string; noData?: boolean }> = ({ 
+  label, value, change, prefix = '', noData = false
 }) => (
   <div>
     <p className="text-gray-400 text-sm">{label}</p>
-    <p className="text-2xl font-bold mt-1">{prefix}{value}</p>
-    {change !== undefined && (
+    {noData ? (
+      <p className="text-2xl font-bold mt-1 text-gray-600">No Data</p>
+    ) : (
+      <p className="text-2xl font-bold mt-1">{prefix}{value}</p>
+    )}
+    {change !== undefined && !noData && (
       <div className={`flex items-center gap-1 mt-1 text-sm ${change >= 0 ? 'text-hf-green' : 'text-hf-red'}`}>
         {change >= 0 ? <ArrowUpRight size={16} /> : <ArrowDownRight size={16} />}
         <span>{change >= 0 ? '+' : ''}{change.toFixed(2)}%</span>
@@ -280,7 +284,7 @@ const StockSearchAdd: React.FC<{ onAdd: (pos: Omit<Position, 'id' | 'currentPric
 }
 
 export default function App() {
-  const [positions, setPositions] = useState<Position[]>(MOCK_POSITIONS)
+  const [positions, setPositions] = useState<Position[]>(INITIAL_POSITIONS)
   const [activeTab, setActiveTab] = useState<'overview' | 'positions' | 'analysis' | 'news'>('overview')
   const [showAddModal, setShowAddModal] = useState(false)
   const [selectedPosition, setSelectedPosition] = useState<Position | null>(null)
@@ -385,17 +389,22 @@ export default function App() {
     setPriceAlerts(priceAlerts.filter(a => a.id !== id))
   }
 
-  // Calculations
-  const totalValue = positions.reduce((sum, pos) => sum + (pos.shares * pos.currentPrice), 0)
-  const totalCost = positions.reduce((sum, pos) => sum + (pos.shares * pos.avgPrice), 0)
-  const totalPnL = totalValue - totalCost
-  const totalPnLPercent = (totalPnL / totalCost) * 100
+  // Check if we have any real price data
+  const hasPriceData = positions.some(pos => pos.currentPrice > 0)
   
-  // Risk Metrics (mock calculations)
-  const sharpeRatio = 1.85
-  const portfolioBeta = 1.12
-  const maxDrawdown = -8.5
-  const volatility = 18.4
+  // Calculations (only if we have data)
+  const totalValue = hasPriceData 
+    ? positions.reduce((sum, pos) => sum + (pos.shares * (pos.currentPrice || pos.avgPrice)), 0)
+    : 0
+  const totalCost = positions.reduce((sum, pos) => sum + (pos.shares * pos.avgPrice), 0)
+  const totalPnL = hasPriceData ? totalValue - totalCost : 0
+  const totalPnLPercent = hasPriceData && totalCost > 0 ? (totalPnL / totalCost) * 100 : 0
+  
+  // Risk Metrics (only calculated when data available)
+  const sharpeRatio = hasPriceData ? 1.85 : 0
+  const portfolioBeta = hasPriceData ? 1.12 : 0
+  const maxDrawdown = hasPriceData ? -8.5 : 0
+  const volatility = hasPriceData ? 18.4 : 0
 
   const addPosition = (position: Omit<Position, 'id' | 'currentPrice'>) => {
     const newPosition: Position = {
@@ -488,7 +497,7 @@ export default function App() {
                 <div className="flex items-center justify-between">
                   <div>
                     <h3 className="font-bold text-lg">🚀 Fetch Real-Time Prices</h3>
-                    <p className="text-sm text-gray-400">Prices are currently mock data. Click to fetch live prices from Alpha Vantage.</p>
+                    <p className="text-sm text-gray-400">No price data available. Click to fetch live prices from Alpha Vantage.</p>
                     {refreshError && <p className="text-sm text-hf-red mt-1">{refreshError}</p>}
                   </div>
                   <button 
@@ -518,6 +527,7 @@ export default function App() {
                   label="Total Value" 
                   value={totalValue.toLocaleString('en-US', { minimumFractionDigits: 2 })} 
                   prefix="$"
+                  noData={!hasPriceData}
                 />
               </Card>
               <Card>
@@ -526,6 +536,7 @@ export default function App() {
                   value={Math.abs(totalPnL).toLocaleString('en-US', { minimumFractionDigits: 2 })} 
                   change={totalPnLPercent}
                   prefix={totalPnL >= 0 ? '+$' : '-$'}
+                  noData={!hasPriceData}
                 />
               </Card>
               <Card>
@@ -559,26 +570,36 @@ export default function App() {
                   <div>
                     <div className="flex justify-between mb-2">
                       <span className="text-sm text-gray-400">Portfolio Risk Level</span>
-                      <span className="text-hf-gold font-bold">MODERATE</span>
+                      <span className={`font-bold ${hasPriceData ? 'text-hf-gold' : 'text-gray-600'}`}>
+                        {hasPriceData ? 'MODERATE' : 'No Data'}
+                      </span>
                     </div>
-                    <RiskMeter value={58} />
+                    {hasPriceData ? <RiskMeter value={58} /> : <div className="h-2 bg-hf-border rounded-full" />}
                   </div>
                   <div className="grid grid-cols-2 gap-4 pt-4">
                     <div>
                       <p className="text-sm text-gray-400">Sharpe Ratio</p>
-                      <p className="text-xl font-bold text-hf-green">{sharpeRatio}</p>
+                      <p className={`text-xl font-bold ${hasPriceData ? 'text-hf-green' : 'text-gray-600'}`}>
+                        {hasPriceData ? sharpeRatio : '—'}
+                      </p>
                     </div>
                     <div>
                       <p className="text-sm text-gray-400">Portfolio Beta</p>
-                      <p className="text-xl font-bold">{portfolioBeta}</p>
+                      <p className={`text-xl font-bold ${hasPriceData ? '' : 'text-gray-600'}`}>
+                        {hasPriceData ? portfolioBeta : '—'}
+                      </p>
                     </div>
                     <div>
                       <p className="text-sm text-gray-400">Max Drawdown</p>
-                      <p className="text-xl font-bold text-hf-red">{maxDrawdown}%</p>
+                      <p className={`text-xl font-bold ${hasPriceData ? 'text-hf-red' : 'text-gray-600'}`}>
+                        {hasPriceData ? `${maxDrawdown}%` : '—'}
+                      </p>
                     </div>
                     <div>
                       <p className="text-sm text-gray-400">Volatility (30d)</p>
-                      <p className="text-xl font-bold">{volatility}%</p>
+                      <p className={`text-xl font-bold ${hasPriceData ? '' : 'text-gray-600'}`}>
+                        {hasPriceData ? `${volatility}%` : '—'}
+                      </p>
                     </div>
                   </div>
                 </div>
@@ -835,10 +856,11 @@ export default function App() {
                 </thead>
                 <tbody>
                   {positions.map((pos) => {
-                    const value = pos.shares * pos.currentPrice
+                    const hasPrice = pos.currentPrice > 0
+                    const value = hasPrice ? pos.shares * pos.currentPrice : 0
                     const cost = pos.shares * pos.avgPrice
-                    const pnl = value - cost
-                    const pnlPercent = (pnl / cost) * 100
+                    const pnl = hasPrice ? value - cost : 0
+                    const pnlPercent = hasPrice && cost > 0 ? (pnl / cost) * 100 : 0
                     
                     return (
                       <tr key={pos.id} className="border-b border-hf-border last:border-0 hover:bg-hf-border/30">
@@ -846,14 +868,18 @@ export default function App() {
                         <td className="py-4">{pos.name}</td>
                         <td className="py-4">{pos.shares}</td>
                         <td className="py-4">${pos.avgPrice.toFixed(2)}</td>
-                        <td className="py-4">${pos.currentPrice.toFixed(2)}</td>
-                        <td className={`py-4 font-medium ${pnl >= 0 ? 'text-hf-green' : 'text-hf-red'}`}>
-                          {pnl >= 0 ? '+' : ''}{pnl.toLocaleString('en-US', { minimumFractionDigits: 2 })}
+                        <td className="py-4">
+                          {hasPrice ? `$${pos.currentPrice.toFixed(2)}` : <span className="text-gray-600">No Data</span>}
                         </td>
-                        <td className={`py-4 font-medium ${pnl >= 0 ? 'text-hf-green' : 'text-hf-red'}`}>
-                          {pnlPercent >= 0 ? '+' : ''}{pnlPercent.toFixed(2)}%
+                        <td className={`py-4 font-medium ${!hasPrice ? 'text-gray-600' : pnl >= 0 ? 'text-hf-green' : 'text-hf-red'}`}>
+                          {hasPrice ? `${pnl >= 0 ? '+' : ''}${pnl.toLocaleString('en-US', { minimumFractionDigits: 2 })}` : '—'}
                         </td>
-                        <td className="py-4 font-bold">${value.toLocaleString('en-US', { minimumFractionDigits: 2 })}</td>
+                        <td className={`py-4 font-medium ${!hasPrice ? 'text-gray-600' : pnl >= 0 ? 'text-hf-green' : 'text-hf-red'}`}>
+                          {hasPrice ? `${pnlPercent >= 0 ? '+' : ''}${pnlPercent.toFixed(2)}%` : '—'}
+                        </td>
+                        <td className="py-4 font-bold">
+                          {hasPrice ? `$${value.toLocaleString('en-US', { minimumFractionDigits: 2 })}` : <span className="text-gray-600">No Data</span>}
+                        </td>
                         <td className="py-4 pr-4">
                           <button 
                             onClick={() => removePosition(pos.id)}
