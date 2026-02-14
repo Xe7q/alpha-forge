@@ -8,7 +8,16 @@ import {
   LineChart, Line, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer,
   PieChart as RePieChart, Pie, Cell, AreaChart, Area
 } from 'recharts'
-import { getStockPrice, getCryptoPrice } from './services/alphaVantage'
+import { 
+  initWebSocket, 
+  subscribeToSymbol, 
+  unsubscribeFromSymbol, 
+  closeWebSocket,
+  getQuote,
+  getMultipleQuotes,
+  getWebSocketStatus,
+  PriceData 
+} from './services/finnhub'
 
 // Types
 interface Position {
@@ -298,51 +307,81 @@ export default function App() {
   const [priceAlerts, setPriceAlerts] = useState<PriceAlert[]>([])
   const [showAlertModal, setShowAlertModal] = useState(false)
 
-  // Fetch real prices from Alpha Vantage
+  // WebSocket connection status
+  const [wsStatus, setWsStatus] = useState<'connected' | 'connecting' | 'disconnected'>('disconnected')
+  
+  // Fetch real prices via REST API (fallback/initial load)
   const refreshPrices = async () => {
     setIsRefreshing(true)
     setRefreshError(null)
-    const updatedPositions = [...positions]
-    let successCount = 0
     
-    for (let i = 0; i < updatedPositions.length; i++) {
-      const pos = updatedPositions[i]
-      try {
-        if (pos.type === 'crypto') {
-          const priceData = await getCryptoPrice(pos.ticker)
-          if (priceData) {
-            updatedPositions[i] = { ...pos, currentPrice: priceData.price }
-            successCount++
-          }
-        } else {
-          const priceData = await getStockPrice(pos.ticker)
-          if (priceData) {
-            updatedPositions[i] = { ...pos, currentPrice: priceData.price }
-            successCount++
-          }
+    const symbols = positions.map(p => p.ticker)
+    const quotes = await getMultipleQuotes(symbols)
+    
+    if (quotes.size > 0) {
+      const updatedPositions = positions.map(pos => {
+        const quote = quotes.get(pos.ticker.toUpperCase())
+        if (quote) {
+          return { ...pos, currentPrice: quote.price }
         }
-      } catch (err) {
-        console.error(`Failed to fetch ${pos.ticker}:`, err)
-      }
-      // Rate limit: 12 second delay between API calls
-      if (i < updatedPositions.length - 1) {
-        await new Promise(resolve => setTimeout(resolve, 12000))
-      }
+        return pos
+      })
+      
+      setPositions(updatedPositions)
+      setLastUpdate(new Date())
+      
+      // Subscribe to WebSocket for real-time updates
+      subscribeAllToWebSocket()
+    } else {
+      setRefreshError('Failed to fetch prices. Please try again.')
     }
     
-    if (successCount === 0) {
-      setRefreshError('API limit reached or network error. Using cached/mock prices.')
-    }
-    
-    setPositions(updatedPositions)
-    setLastUpdate(new Date())
     setIsRefreshing(false)
-    
-    // Check price alerts after refresh
-    checkPriceAlerts(updatedPositions)
+  }
+  
+  // Subscribe all positions to WebSocket
+  const subscribeAllToWebSocket = () => {
+    positions.forEach(pos => {
+      subscribeToSymbol(pos.ticker)
+    })
+  }
+  
+  // Handle real-time price updates
+  const handlePriceUpdate = (priceData: PriceData) => {
+    setPositions(prevPositions => {
+      return prevPositions.map(pos => {
+        if (pos.ticker.toUpperCase() === priceData.symbol.toUpperCase()) {
+          return { ...pos, currentPrice: priceData.price }
+        }
+        return pos
+      })
+    })
+    setLastUpdate(new Date())
   }
 
-  // Auto-refresh effect
+  // Initialize WebSocket connection
+  useEffect(() => {
+    const ws = initWebSocket(
+      handlePriceUpdate,
+      () => setWsStatus('connected'),
+      () => setWsStatus('disconnected')
+    )
+    
+    if (ws) {
+      setWsStatus('connecting')
+    }
+    
+    return () => {
+      closeWebSocket()
+    }
+  }, [])
+  
+  // Subscribe to symbols when positions change
+  useEffect(() => {
+    subscribeAllToWebSocket()
+  }, [positions])
+  
+  // Auto-refresh effect (backup polling)
   useEffect(() => {
     if (!autoRefreshEnabled) return
     
@@ -353,7 +392,7 @@ export default function App() {
     
     return () => clearInterval(interval)
   }, [autoRefreshEnabled, refreshInterval, positions])
-
+  
   // Auto-fetch prices on component mount (with 3 second delay)
   useEffect(() => {
     const timer = setTimeout(() => {
@@ -363,7 +402,7 @@ export default function App() {
     }, 3000)
     
     return () => clearTimeout(timer)
-  }, []) // Only run on mount
+  }, [])
 
   // Check price alerts
   const checkPriceAlerts = (currentPositions: Position[]) => {
@@ -447,22 +486,27 @@ export default function App() {
               </div>
             </div>
             <div className="flex items-center gap-4">
-              {/* API Status Badge */}
-              <div className={`px-3 py-1 rounded-full text-xs font-medium ${
-                isRefreshing ? 'bg-hf-gold/20 text-hf-gold' : 
-                hasPriceData ? 'bg-hf-green/20 text-hf-green' : 
+              {/* WebSocket Status Badge */}
+              <div className={`px-3 py-1 rounded-full text-xs font-medium flex items-center gap-1 ${
+                wsStatus === 'connected' ? 'bg-hf-green/20 text-hf-green' : 
+                wsStatus === 'connecting' ? 'bg-hf-gold/20 text-hf-gold' : 
                 'bg-hf-red/20 text-hf-red'
               }`}>
-                {isRefreshing ? '● Fetching' : 
-                 hasPriceData ? '● Live' : 
-                 '● No Data'}
+                <span className={`w-2 h-2 rounded-full ${
+                  wsStatus === 'connected' ? 'bg-hf-green animate-pulse' : 
+                  wsStatus === 'connecting' ? 'bg-hf-gold' : 
+                  'bg-hf-red'
+                }`}></span>
+                {wsStatus === 'connected' ? 'WebSocket Live' : 
+                 wsStatus === 'connecting' ? 'Connecting...' : 
+                 'Disconnected'}
               </div>
               
               <button 
                 onClick={refreshPrices}
                 disabled={isRefreshing}
                 className="p-2 hover:bg-hf-border rounded-lg disabled:opacity-50"
-                title="Refresh Prices (Alpha Vantage)"
+                title="Refresh Prices (Finnhub)"
               >
                 <RefreshCw size={20} className={isRefreshing ? 'animate-spin' : ''} />
               </button>
@@ -528,7 +572,7 @@ export default function App() {
                 <div className="flex items-center justify-between">
                   <div>
                     <h3 className="font-bold text-lg">🚀 Fetch Real-Time Prices</h3>
-                    <p className="text-sm text-gray-400">No price data available. Click to fetch live prices from Alpha Vantage.</p>
+                    <p className="text-sm text-gray-400">No price data available. Click to fetch live prices from Finnhub (real-time streaming).</p>
                     {refreshError && <p className="text-sm text-hf-red mt-1">{refreshError}</p>}
                   </div>
                   <button 
@@ -757,8 +801,8 @@ export default function App() {
                   {autoRefreshEnabled && (
                     <div>
                       <label className="text-sm text-gray-400">Refresh every (minutes)</label>
-                      <div className="flex gap-2 mt-2">
-                        {[2, 5, 15, 30].map(min => (
+                      <div className="flex gap-2 mt-2 flex-wrap">
+                        {[1, 2, 5, 10, 15, 30].map(min => (
                           <button
                             key={min}
                             onClick={() => setRefreshInterval(min)}
@@ -768,16 +812,23 @@ export default function App() {
                           </button>
                         ))}
                       </div>
-                      <p className="text-xs text-gray-500 mt-2">
-                        Note: Each position requires 1 API call. With {positions.length} positions, 
-                        full refresh takes ~{positions.length * 12} seconds (5 calls/min limit)
-                      </p>
+                      <div className="space-y-2 mt-2">
+                        <p className="text-xs text-gray-500">
+                          <strong>Finnhub:</strong> 60 calls/minute | WebSocket streaming active
+                        </p>
+                        <p className="text-xs text-gray-500">
+                          {positions.length} positions monitored in real-time
+                        </p>
+                      </div>
                       <div className="mt-3 p-2 bg-hf-dark rounded-lg">
                         <p className="text-xs text-gray-400">
-                          Last successful fetch: {lastUpdate ? lastUpdate.toLocaleTimeString() : 'Never'}
+                          Last update: {lastUpdate ? lastUpdate.toLocaleTimeString() : 'Never'}
                         </p>
                         <p className="text-xs text-gray-400 mt-1">
-                          Status: {isRefreshing ? 'Fetching...' : hasPriceData ? 'Live' : 'Waiting for data'}
+                          WebSocket: {wsStatus === 'connected' ? '● Connected (Live)' : wsStatus === 'connecting' ? 'Connecting...' : 'Disconnected'}
+                        </p>
+                        <p className="text-xs text-gray-400 mt-1">
+                          Auto-refresh: {autoRefreshEnabled ? `${refreshInterval}min intervals` : 'Off'}
                         </p>
                       </div>
                     </div>
