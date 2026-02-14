@@ -18,6 +18,8 @@ import {
   getWebSocketStatus,
   PriceData 
 } from './services/finnhub'
+import { getNewsForTickers, NewsArticle } from './services/newsApi'
+import { calculateRiskMetrics, RiskMetrics, getRiskLevelColor, getRiskLevelBg } from './services/riskAnalysis'
 
 // Types
 interface Position {
@@ -310,6 +312,10 @@ export default function App() {
   // WebSocket connection status
   const [wsStatus, setWsStatus] = useState<'connected' | 'connecting' | 'disconnected'>('disconnected')
   
+  // News state
+  const [newsArticles, setNewsArticles] = useState<NewsArticle[]>([])
+  const [newsFilter, setNewsFilter] = useState<'all' | 'holdings'>('all')
+  
   // Fetch real prices via REST API (fallback/initial load)
   const refreshPrices = async () => {
     setIsRefreshing(true)
@@ -403,6 +409,20 @@ export default function App() {
     
     return () => clearTimeout(timer)
   }, [])
+  
+  // Fetch news when on news tab
+  useEffect(() => {
+    if (activeTab === 'news') {
+      const fetchNews = async () => {
+        const tickers = newsFilter === 'holdings' 
+          ? positions.map(p => p.ticker)
+          : []
+        const articles = await getNewsForTickers(tickers)
+        setNewsArticles(articles)
+      }
+      fetchNews()
+    }
+  }, [activeTab, newsFilter, positions])
 
   // Check price alerts
   const checkPriceAlerts = (currentPositions: Position[]) => {
@@ -451,10 +471,16 @@ export default function App() {
   const totalPnLPercent = hasPriceData && totalCost > 0 ? (totalPnL / totalCost) * 100 : 0
   
   // Risk Metrics (only calculated when data available)
-  const sharpeRatio = hasPriceData ? 1.85 : 0
-  const portfolioBeta = hasPriceData ? 1.12 : 0
-  const maxDrawdown = hasPriceData ? -8.5 : 0
-  const volatility = hasPriceData ? 18.4 : 0
+  const riskMetrics: RiskMetrics = hasPriceData ? calculateRiskMetrics(positions) : {
+    portfolioBeta: 0,
+    portfolioVolatility: 0,
+    sharpeRatio: 0,
+    maxDrawdown: 0,
+    var95: 0,
+    positionRisks: [],
+    sectorConcentration: [],
+    correlations: { tickers: [], matrix: [] }
+  }
 
   const addPosition = (position: Omit<Position, 'id' | 'currentPrice'>) => {
     const newPosition: Position = {
@@ -1048,16 +1074,141 @@ export default function App() {
                 </div>
               </Card>
             </div>
+            
+            {/* Risk Analysis Section */}
+            <div className="space-y-6">
+              <h2 className="text-xl font-bold">Risk Analysis</h2>
+              
+              {/* Portfolio Risk Metrics */}
+              <div className="grid grid-cols-1 md:grid-cols-4 gap-6">
+                <Card>
+                  <p className="text-sm text-gray-400">Portfolio Beta</p>
+                  <p className="text-2xl font-bold mt-1">
+                    {hasPriceData ? riskMetrics.portfolioBeta.toFixed(2) : <span className="text-gray-600">No Data</span>}
+                  </p>
+                  <p className="text-xs text-gray-500 mt-1">
+                    {riskMetrics.portfolioBeta > 1.2 ? 'High volatility' : 
+                     riskMetrics.portfolioBeta < 0.8 ? 'Defensive' : 'Market-like'}
+                  </p>
+                </Card>
+                <Card>
+                  <p className="text-sm text-gray-400">Volatility (Est.)</p>
+                  <p className="text-2xl font-bold mt-1">
+                    {hasPriceData ? `${riskMetrics.portfolioVolatility.toFixed(1)}%` : <span className="text-gray-600">No Data</span>}
+                  </p>
+                  <p className="text-xs text-gray-500 mt-1">Annualized standard deviation</p>
+                </Card>
+                <Card>
+                  <p className="text-sm text-gray-400">Sharpe Ratio</p>
+                  <p className={`text-2xl font-bold mt-1 ${riskMetrics.sharpeRatio > 1 ? 'text-hf-green' : riskMetrics.sharpeRatio < 0 ? 'text-hf-red' : ''}`}>
+                    {hasPriceData ? riskMetrics.sharpeRatio.toFixed(2) : <span className="text-gray-600">No Data</span>}
+                  </p>
+                  <p className="text-xs text-gray-500 mt-1">
+                    {riskMetrics.sharpeRatio > 1 ? 'Good risk-adjusted returns' : 
+                     riskMetrics.sharpeRatio < 0 ? 'Poor returns vs risk' : 'Average'}
+                  </p>
+                </Card>
+                <Card>
+                  <p className="text-sm text-gray-400">Value at Risk (95%)</p>
+                  <p className="text-2xl font-bold mt-1 text-hf-red">
+                    {hasPriceData ? `-$${(riskMetrics.var95 / 1000).toFixed(1)}k` : <span className="text-gray-600">No Data</span>}
+                  </p>
+                  <p className="text-xs text-gray-500 mt-1">Max loss 95% confidence</p>
+                </Card>
+              </div>
+              
+              {/* Sector Concentration */}
+              <Card>
+                <h3 className="text-lg font-bold mb-4 flex items-center gap-2">
+                  <PieChart size={20} className="text-hf-blue" />
+                  Sector Concentration Risk
+                </h3>
+                <div className="space-y-3">
+                  {riskMetrics.sectorConcentration.length === 0 ? (
+                    <p className="text-gray-400">No sector data available</p>
+                  ) : (
+                    riskMetrics.sectorConcentration.map((sector) => (
+                      <div key={sector.sector} className="flex items-center justify-between p-3 bg-hf-dark rounded-lg">
+                        <div className="flex items-center gap-3">
+                          <span className="font-medium">{sector.sector}</span>
+                          <span className="text-sm text-gray-400">{sector.weight.toFixed(1)}%</span>
+                        </div>
+                        <span className={`text-xs px-2 py-1 rounded font-medium ${getRiskLevelBg(sector.riskLevel)} ${getRiskLevelColor(sector.riskLevel)}`}>
+                          {sector.riskLevel.toUpperCase()} RISK
+                        </span>
+                      </div>
+                    ))
+                  )}
+                </div>
+                {riskMetrics.sectorConcentration.some(s => s.riskLevel === 'high' || s.riskLevel === 'extreme') && (
+                  <div className="mt-4 p-3 bg-hf-gold/10 border border-hf-gold/30 rounded-lg">
+                    <p className="text-sm text-hf-gold">
+                      ⚠️ <strong>Concentration Warning:</strong> Consider diversifying across more sectors to reduce risk.
+                    </p>
+                  </div>
+                )}
+              </Card>
+              
+              {/* Position Risk Contributions */}
+              <Card>
+                <h3 className="text-lg font-bold mb-4">Position Risk Contributions</h3>
+                <div className="space-y-2">
+                  {riskMetrics.positionRisks.length === 0 ? (
+                    <p className="text-gray-400">No position data available</p>
+                  ) : (
+                    riskMetrics.positionRisks
+                      .sort((a, b) => b.contribution - a.contribution)
+                      .map((pos) => (
+                        <div key={pos.ticker} className="flex items-center justify-between p-2 hover:bg-hf-border/30 rounded">
+                          <div className="flex items-center gap-3">
+                            <span className="font-mono font-bold">{pos.ticker}</span>
+                            <span className="text-sm text-gray-400">{pos.weight.toFixed(1)}% of portfolio</span>
+                          </div>
+                          <div className="flex items-center gap-4">
+                            <span className="text-sm">β {pos.beta.toFixed(2)}</span>
+                            <div className="w-32 h-2 bg-hf-border rounded-full overflow-hidden">
+                              <div 
+                                className={`h-full rounded-full ${pos.contribution > 0.3 ? 'bg-hf-red' : pos.contribution > 0.2 ? 'bg-hf-gold' : 'bg-hf-green'}`}
+                                style={{ width: `${Math.min(pos.contribution * 100, 100)}%` }}
+                              />
+                            </div>
+                          </div>
+                        </div>
+                      ))
+                  )}
+                </div>
+              </Card>
+            </div>
           </div>
         )}
 
         {activeTab === 'news' && (
           <div className="space-y-6">
             <div className="flex items-center justify-between">
-              <h2 className="text-xl font-bold">Market Intelligence</h2>
-              <div className="flex gap-2">
-                <span className="text-xs bg-hf-red text-black px-2 py-1 rounded font-bold">LIVE</span>
-                <span className="text-sm text-gray-400">24/7 Monitoring Active</span>
+              <div>
+                <h2 className="text-xl font-bold">Market Intelligence</h2>
+                <p className="text-sm text-gray-400 mt-1">
+                  {newsFilter === 'holdings' 
+                    ? `Showing news for ${positions.length} holdings`
+                    : 'Showing all market news'}
+                </p>
+              </div>
+              <div className="flex items-center gap-3">
+                <div className="flex bg-hf-card rounded-lg p-1">
+                  <button
+                    onClick={() => setNewsFilter('all')}
+                    className={`px-3 py-1 rounded text-sm ${newsFilter === 'all' ? 'bg-hf-blue' : 'text-gray-400 hover:text-white'}`}
+                  >
+                    All News
+                  </button>
+                  <button
+                    onClick={() => setNewsFilter('holdings')}
+                    className={`px-3 py-1 rounded text-sm ${newsFilter === 'holdings' ? 'bg-hf-blue' : 'text-gray-400 hover:text-white'}`}
+                  >
+                    My Holdings
+                  </button>
+                </div>
+                <span className="text-xs bg-hf-green/20 text-hf-green px-2 py-1 rounded font-bold">LIVE</span>
               </div>
             </div>
 
@@ -1086,21 +1237,49 @@ export default function App() {
             </Card>
 
             <div className="space-y-4">
-              {MOCK_NEWS.map((news) => (
-                <Card key={news.id} className="hover:border-hf-blue transition-colors cursor-pointer">
-                  <div className="flex items-start justify-between">
-                    <div className="flex-1">
-                      <div className="flex items-center gap-3 mb-2">
-                        <span className="text-xs bg-hf-border px-2 py-1 rounded">{news.category}</span>
-                        <span className="text-xs text-gray-500">{news.source}</span>
-                        <span className="text-xs text-gray-500">{news.timestamp.toLocaleTimeString()}</span>
-                      </div>
-                      <h3 className="font-semibold mb-2">{news.title}</h3>
-                    </div>
-                    <ImpactBadge score={news.impact} />
-                  </div>
+              {newsArticles.length === 0 ? (
+                <Card className="text-center py-8">
+                  <p className="text-gray-400">No news available</p>
+                  <p className="text-sm text-gray-500 mt-1">Check back later for updates</p>
                 </Card>
-              ))}
+              ) : (
+                newsArticles.map((news) => (
+                  <Card key={news.id} className="hover:border-hf-blue transition-colors cursor-pointer">
+                    <div className="flex items-start justify-between gap-4">
+                      <div className="flex-1">
+                        <div className="flex items-center gap-3 mb-2">
+                          {news.ticker && (
+                            <span className="text-xs bg-hf-blue/30 text-hf-blue px-2 py-0.5 rounded font-mono">
+                              {news.ticker}
+                            </span>
+                          )}
+                          <span className={`text-xs px-2 py-0.5 rounded ${
+                            news.sentiment === 'positive' ? 'bg-hf-green/20 text-hf-green' :
+                            news.sentiment === 'negative' ? 'bg-hf-red/20 text-hf-red' :
+                            'bg-hf-border text-gray-400'
+                          }`}>
+                            {news.sentiment.toUpperCase()}
+                          </span>
+                          <span className="text-xs text-gray-500">{news.source}</span>
+                          <span className="text-xs text-gray-500">
+                            {new Date(news.publishedAt).toLocaleTimeString()}
+                          </span>
+                        </div>
+                        <h3 className="font-semibold mb-1">{news.title}</h3>
+                        <p className="text-sm text-gray-400">{news.description}</p>
+                      </div>
+                      <a 
+                        href={news.url} 
+                        target="_blank" 
+                        rel="noopener noreferrer"
+                        className="text-hf-blue hover:text-white text-sm"
+                      >
+                        Read →
+                      </a>
+                    </div>
+                  </Card>
+                ))
+              )}
             </div>
           </div>
         )}
