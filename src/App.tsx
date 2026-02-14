@@ -20,6 +20,9 @@ import {
 } from './services/finnhub'
 import { getNewsForTickers, NewsArticle } from './services/newsApi'
 import { calculateRiskMetrics, RiskMetrics, getRiskLevelColor, getRiskLevelBg } from './services/riskAnalysis'
+import { getChartData, getPerformanceMetrics, savePortfolioSnapshot } from './services/portfolioHistory'
+import { getTaxSummary, findTaxLossOpportunities, calculateTaxEstimate } from './services/taxReporting'
+import { analyzePortfolio, getInvestmentAdvice } from './services/aiAdvisor'
 
 // Types
 interface Position {
@@ -296,7 +299,7 @@ const StockSearchAdd: React.FC<{ onAdd: (pos: Omit<Position, 'id' | 'currentPric
 
 export default function App() {
   const [positions, setPositions] = useState<Position[]>(INITIAL_POSITIONS)
-  const [activeTab, setActiveTab] = useState<'overview' | 'positions' | 'analysis' | 'news'>('overview')
+  const [activeTab, setActiveTab] = useState<'overview' | 'positions' | 'analysis' | 'performance' | 'tax' | 'ai' | 'news'>('overview')
   const [showAddModal, setShowAddModal] = useState(false)
   const [selectedPosition, setSelectedPosition] = useState<Position | null>(null)
   const [isRefreshing, setIsRefreshing] = useState(false)
@@ -423,6 +426,13 @@ export default function App() {
       fetchNews()
     }
   }, [activeTab, newsFilter, positions])
+  
+  // Save portfolio snapshot for history tracking
+  useEffect(() => {
+    if (hasPriceData && positions.length > 0) {
+      savePortfolioSnapshot(positions)
+    }
+  }, [positions, hasPriceData])
 
   // Check price alerts
   const checkPriceAlerts = (currentPositions: Position[]) => {
@@ -569,7 +579,10 @@ export default function App() {
               { id: 'overview', label: 'Overview', icon: PieChart },
               { id: 'positions', label: 'Positions', icon: Wallet },
               { id: 'analysis', label: 'Analysis', icon: Activity },
-              { id: 'news', label: 'Intelligence', icon: Globe },
+              { id: 'performance', label: 'Performance', icon: BarChart3 },
+              { id: 'tax', label: 'Tax Center', icon: Shield },
+              { id: 'ai', label: 'AI Advisor', icon: Zap },
+              { id: 'news', label: 'News', icon: Globe },
             ].map(({ id, label, icon: Icon }) => (
               <button
                 key={id}
@@ -1281,6 +1294,314 @@ export default function App() {
                 ))
               )}
             </div>
+          </div>
+        )}
+
+        {activeTab === 'performance' && (
+          <div className="space-y-6">
+            <div className="flex items-center justify-between">
+              <h2 className="text-xl font-bold">Portfolio Performance</h2>
+              <span className="text-xs bg-hf-blue px-2 py-1 rounded">vs S&P 500</span>
+            </div>
+            
+            {/* Performance Metrics */}
+            {(() => {
+              const metrics = getPerformanceMetrics()
+              return (
+                <div className="grid grid-cols-1 md:grid-cols-4 gap-6">
+                  <Card>
+                    <p className="text-sm text-gray-400">Total Return</p>
+                    <p className={`text-2xl font-bold mt-1 ${metrics.totalReturnPercent >= 0 ? 'text-hf-green' : 'text-hf-red'}`}>
+                      {metrics.totalReturnPercent >= 0 ? '+' : ''}{metrics.totalReturnPercent.toFixed(2)}%
+                    </p>
+                  </Card>
+                  <Card>
+                    <p className="text-sm text-gray-400">Annualized Return</p>
+                    <p className={`text-2xl font-bold mt-1 ${metrics.annualizedReturn >= 0 ? 'text-hf-green' : 'text-hf-red'}`}>
+                      {metrics.annualizedReturn >= 0 ? '+' : ''}{metrics.annualizedReturn.toFixed(2)}%
+                    </p>
+                  </Card>
+                  <Card>
+                    <p className="text-sm text-gray-400">Best Day</p>
+                    <p className="text-2xl font-bold mt-1 text-hf-green">
+                      +{metrics.bestDay.return.toFixed(2)}%
+                    </p>
+                    <p className="text-xs text-gray-500">{metrics.bestDay.date}</p>
+                  </Card>
+                  <Card>
+                    <p className="text-sm text-gray-400">Worst Day</p>
+                    <p className="text-2xl font-bold mt-1 text-hf-red">
+                      {metrics.worstDay.return.toFixed(2)}%
+                    </p>
+                    <p className="text-xs text-gray-500">{metrics.worstDay.date}</p>
+                  </Card>
+                </div>
+              )
+            })()}
+            
+            {/* Performance Chart */}
+            <Card>
+              <h3 className="text-lg font-bold mb-4">Portfolio Value Over Time</h3>
+              <div className="h-80">
+                <ResponsiveContainer width="100%" height="100%">
+                  <AreaChart data={getChartData()}>
+                    <defs>
+                      <linearGradient id="colorPortfolio" x1="0" y1="0" x2="0" y2="1">
+                        <stop offset="5%" stopColor="#2979ff" stopOpacity={0.3}/>
+                        <stop offset="95%" stopColor="#2979ff" stopOpacity={0}/>
+                      </linearGradient>
+                      <linearGradient id="colorBenchmark" x1="0" y1="0" x2="0" y2="1">
+                        <stop offset="5%" stopColor="#ffd700" stopOpacity={0.3}/>
+                        <stop offset="95%" stopColor="#ffd700" stopOpacity={0}/>
+                      </linearGradient>
+                    </defs>
+                    <CartesianGrid strokeDasharray="3 3" stroke="#2a2a2a" />
+                    <XAxis dataKey="date" stroke="#666" />
+                    <YAxis stroke="#666" />
+                    <Tooltip 
+                      contentStyle={{ backgroundColor: '#141414', border: '1px solid #2a2a2a' }}
+                      formatter={(value: number) => `$${value.toLocaleString()}`}
+                    />
+                    <Area type="monotone" dataKey="portfolio" stroke="#2979ff" fillOpacity={1} fill="url(#colorPortfolio)" name="Your Portfolio" />
+                    <Area type="monotone" dataKey="benchmark" stroke="#ffd700" fillOpacity={1} fill="url(#colorBenchmark)" name="S&P 500" />
+                  </AreaChart>
+                </ResponsiveContainer>
+              </div>
+              <div className="flex justify-center gap-6 mt-4">
+                <div className="flex items-center gap-2">
+                  <div className="w-3 h-3 rounded-full bg-hf-blue" />
+                  <span className="text-sm">Your Portfolio</span>
+                </div>
+                <div className="flex items-center gap-2">
+                  <div className="w-3 h-3 rounded-full bg-hf-gold" />
+                  <span className="text-sm">S&P 500 Benchmark</span>
+                </div>
+              </div>
+            </Card>
+          </div>
+        )}
+
+        {activeTab === 'tax' && (
+          <div className="space-y-6">
+            <h2 className="text-xl font-bold">Tax Center</h2>
+            
+            {(() => {
+              const taxSummary = getTaxSummary(positions)
+              const opportunities = findTaxLossOpportunities(positions)
+              return (
+                <>
+                  {/* Tax Summary Cards */}
+                  <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
+                    <Card>
+                      <p className="text-sm text-gray-400">Unrealized Gain/Loss</p>
+                      <p className={`text-2xl font-bold mt-1 ${taxSummary.unrealizedGain >= 0 ? 'text-hf-green' : 'text-hf-red'}`}>
+                        {taxSummary.unrealizedGainFormatted}
+                      </p>
+                    </Card>
+                    <Card>
+                      <p className="text-sm text-gray-400">Est. Tax If Sold Now</p>
+                      <p className="text-2xl font-bold mt-1 text-hf-red">
+                        ${taxSummary.estimatedTax.toLocaleString()}
+                      </p>
+                      <p className="text-xs text-gray-500 mt-1">Effective rate: {taxSummary.effectiveRate.toFixed(1)}%</p>
+                    </Card>
+                    <Card>
+                      <p className="text-sm text-gray-400">Tax Loss Opportunities</p>
+                      <p className="text-2xl font-bold mt-1 text-hf-green">
+                        {taxSummary.totalOpportunities}
+                      </p>
+                      <p className="text-xs text-gray-500 mt-1">
+                        Potential savings: ${taxSummary.potentialSavings.toLocaleString()}
+                      </p>
+                    </Card>
+                  </div>
+                  
+                  {/* Tax Loss Harvesting */}
+                  <Card>
+                    <h3 className="text-lg font-bold mb-4 flex items-center gap-2">
+                      <span className="text-hf-green">💡</span>
+                      Tax Loss Harvesting Opportunities
+                    </h3>
+                    {opportunities.length === 0 ? (
+                      <p className="text-gray-400">No tax loss opportunities at this time.</p>
+                    ) : (
+                      <div className="space-y-3">
+                        {opportunities.map((opp) => (
+                          <div key={opp.ticker} className={`p-3 rounded-lg border ${
+                            opp.recommendation === 'harvest' 
+                              ? 'bg-hf-green/10 border-hf-green/30' 
+                              : opp.recommendation === 'avoid'
+                              ? 'bg-hf-red/10 border-hf-red/30'
+                              : 'bg-hf-border/30 border-hf-border'
+                          }`}>
+                            <div className="flex items-center justify-between">
+                              <div>
+                                <span className="font-mono font-bold">{opp.ticker}</span>
+                                <span className="text-sm text-gray-400 ml-2">
+                                  Loss: -${opp.currentLoss.toLocaleString()}
+                                </span>
+                              </div>
+                              <span className={`text-xs px-2 py-1 rounded ${
+                                opp.recommendation === 'harvest'
+                                  ? 'bg-hf-green text-black'
+                                  : opp.recommendation === 'avoid'
+                                  ? 'bg-hf-red text-white'
+                                  : 'bg-hf-gold text-black'
+                              }`}>
+                                {opp.recommendation.toUpperCase()}
+                              </span>
+                            </div>
+                            <p className="text-sm text-gray-400 mt-1">{opp.reasoning}</p>
+                            <p className="text-xs text-gray-500 mt-1">Held for {opp.daysHeld} days</p>
+                          </div>
+                        ))}
+                      </div>
+                    )}
+                  </Card>
+                  
+                  {/* Tax Tips */}
+                  <Card>
+                    <h3 className="text-lg font-bold mb-4">Tax Tips</h3>
+                    <div className="space-y-2 text-sm text-gray-400">
+                      <p>• <strong>Long-term gains</strong> (held &gt;1 year) taxed at lower rates (0%, 15%, or 20%)</p>
+                      <p>• <strong>Wash sale rule:</strong> Can't claim loss if you buy same stock 30 days before/after sale</p>
+                      <p>• <strong>Tax-loss harvesting:</strong> Offset gains with losses to reduce tax bill</p>
+                      <p>• <strong>Max deduction:</strong> Can deduct up to $3,000 in net losses against ordinary income</p>
+                    </div>
+                  </Card>
+                </>
+              )
+            })()}
+          </div>
+        )}
+
+        {activeTab === 'ai' && (
+          <div className="space-y-6">
+            <div className="flex items-center justify-between">
+              <h2 className="text-xl font-bold">AI Portfolio Advisor</h2>
+              {(() => {
+                const analysis = analyzePortfolio(positions)
+                const healthColors: Record<string, string> = {
+                  excellent: 'bg-hf-green',
+                  good: 'bg-hf-blue',
+                  fair: 'bg-hf-gold',
+                  poor: 'bg-orange-500',
+                  critical: 'bg-hf-red'
+                }
+                return (
+                  <div className="flex items-center gap-3">
+                    <span className="text-sm text-gray-400">Portfolio Health:</span>
+                    <span className={`px-3 py-1 rounded-full text-sm font-bold text-black ${healthColors[analysis.overallHealth]}`}>
+                      {analysis.overallHealth.toUpperCase()} ({analysis.healthScore}/100)
+                    </span>
+                  </div>
+                )
+              })()}
+            </div>
+            
+            {(() => {
+              const analysis = analyzePortfolio(positions)
+              return (
+                <>
+                  {/* Strengths & Weaknesses */}
+                  <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
+                    <Card>
+                      <h3 className="text-lg font-bold mb-4 text-hf-green">✅ Strengths</h3>
+                      {analysis.strengths.length === 0 ? (
+                        <p className="text-gray-400">No major strengths identified.</p>
+                      ) : (
+                        <ul className="space-y-2">
+                          {analysis.strengths.map((strength, i) => (
+                            <li key={i} className="flex items-start gap-2">
+                              <span className="text-hf-green">•</span>
+                              <span>{strength}</span>
+                            </li>
+                          ))}
+                        </ul>
+                      )}
+                    </Card>
+                    <Card>
+                      <h3 className="text-lg font-bold mb-4 text-hf-gold">⚠️ Areas to Improve</h3>
+                      {analysis.weaknesses.length === 0 ? (
+                        <p className="text-gray-400">No major weaknesses identified.</p>
+                      ) : (
+                        <ul className="space-y-2">
+                          {analysis.weaknesses.map((weakness, i) => (
+                            <li key={i} className="flex items-start gap-2">
+                              <span className="text-hf-gold">•</span>
+                              <span>{weakness}</span>
+                            </li>
+                          ))}
+                        </ul>
+                      )}
+                    </Card>
+                  </div>
+                  
+                  {/* AI Recommendations */}
+                  <Card>
+                    <h3 className="text-lg font-bold mb-4">🤖 AI Recommendations</h3>
+                    {analysis.recommendations.length === 0 ? (
+                      <p className="text-gray-400">No recommendations at this time.</p>
+                    ) : (
+                      <div className="space-y-4">
+                        {analysis.recommendations.slice(0, 5).map((rec, i) => (
+                          <div key={i} className={`p-4 rounded-lg border ${
+                            rec.urgency === 'critical' ? 'bg-hf-red/10 border-hf-red/30' :
+                            rec.urgency === 'high' ? 'bg-orange-500/10 border-orange-500/30' :
+                            rec.urgency === 'medium' ? 'bg-hf-gold/10 border-hf-gold/30' :
+                            'bg-hf-border/30 border-hf-border'
+                          }`}>
+                            <div className="flex items-center justify-between mb-2">
+                              <div className="flex items-center gap-2">
+                                <span className="font-mono font-bold">{rec.ticker}</span>
+                                <span className={`text-xs px-2 py-0.5 rounded ${
+                                  rec.type === 'buy' ? 'bg-hf-green text-black' :
+                                  rec.type === 'sell' ? 'bg-hf-red text-white' :
+                                  rec.type === 'rebalance' ? 'bg-hf-gold text-black' :
+                                  'bg-hf-blue text-white'
+                                }`}>
+                                  {rec.type.toUpperCase()}
+                                </span>
+                                <span className={`text-xs px-2 py-0.5 rounded ${
+                                  rec.urgency === 'critical' ? 'bg-hf-red text-white' :
+                                  rec.urgency === 'high' ? 'bg-orange-500 text-white' :
+                                  rec.urgency === 'medium' ? 'bg-hf-gold text-black' :
+                                  'bg-gray-600 text-white'
+                                }`}>
+                                  {rec.urgency.toUpperCase()}
+                                </span>
+                              </div>
+                              <span className="text-xs text-gray-400">{rec.confidence}% confidence</span>
+                            </div>
+                            <p className="text-sm mb-2">{rec.reasoning}</p>
+                            <p className="text-sm text-hf-blue">→ {rec.action}</p>
+                          </div>
+                        ))}
+                      </div>
+                    )}
+                  </Card>
+                  
+                  {/* Scenario Analysis */}
+                  <Card>
+                    <h3 className="text-lg font-bold mb-4">📊 "What If" Scenario Analysis</h3>
+                    <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
+                      {analysis.scenarioAnalysis.map((scenario, i) => (
+                        <div key={i} className="p-4 bg-hf-dark rounded-lg text-center">
+                          <p className="font-bold mb-1">{scenario.name}</p>
+                          <p className="text-xs text-gray-400 mb-2">{scenario.description}</p>
+                          <p className={`text-xl font-bold ${scenario.change >= 0 ? 'text-hf-green' : 'text-hf-red'}`}>
+                            {scenario.change >= 0 ? '+' : ''}{scenario.changePercent.toFixed(1)}%
+                          </p>
+                          <p className="text-sm text-gray-400">
+                            ${(scenario.portfolioValue / 1000).toFixed(1)}k
+                          </p>
+                        </div>
+                      ))}
+                    </div>
+                  </Card>
+                </>
+              )
+            })()}
           </div>
         )}
       </main>
