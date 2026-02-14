@@ -427,6 +427,9 @@ export default function App() {
     }
   }, [activeTab, newsFilter, positions])
   
+  // Check if we have any real price data (MOVED UP)
+  const hasPriceData = positions.some(pos => pos.currentPrice > 0)
+  
   // Save portfolio snapshot for history tracking
   useEffect(() => {
     if (hasPriceData && positions.length > 0) {
@@ -468,9 +471,6 @@ export default function App() {
   const removePriceAlert = (id: string) => {
     setPriceAlerts(priceAlerts.filter(a => a.id !== id))
   }
-
-  // Check if we have any real price data
-  const hasPriceData = positions.some(pos => pos.currentPrice > 0)
   
   // Calculations (only if we have data)
   const totalValue = hasPriceData 
@@ -694,25 +694,25 @@ export default function App() {
                     <div>
                       <p className="text-sm text-gray-400">Sharpe Ratio</p>
                       <p className={`text-xl font-bold ${hasPriceData ? 'text-hf-green' : 'text-gray-600'}`}>
-                        {hasPriceData ? sharpeRatio : '—'}
+                        {hasPriceData ? riskMetrics.sharpeRatio.toFixed(2) : '—'}
                       </p>
                     </div>
                     <div>
                       <p className="text-sm text-gray-400">Portfolio Beta</p>
                       <p className={`text-xl font-bold ${hasPriceData ? '' : 'text-gray-600'}`}>
-                        {hasPriceData ? portfolioBeta : '—'}
+                        {hasPriceData ? riskMetrics.portfolioBeta.toFixed(2) : '—'}
                       </p>
                     </div>
                     <div>
                       <p className="text-sm text-gray-400">Max Drawdown</p>
                       <p className={`text-xl font-bold ${hasPriceData ? 'text-hf-red' : 'text-gray-600'}`}>
-                        {hasPriceData ? `${maxDrawdown}%` : '—'}
+                        {hasPriceData ? `${riskMetrics.maxDrawdown.toFixed(1)}%` : '—'}
                       </p>
                     </div>
                     <div>
                       <p className="text-sm text-gray-400">Volatility (30d)</p>
                       <p className={`text-xl font-bold ${hasPriceData ? '' : 'text-gray-600'}`}>
-                        {hasPriceData ? `${volatility}%` : '—'}
+                        {hasPriceData ? `${riskMetrics.portfolioVolatility.toFixed(1)}%` : '—'}
                       </p>
                     </div>
                   </div>

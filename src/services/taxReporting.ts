@@ -195,6 +195,11 @@ export function getTaxSummary(positions: Position[]) {
   const estimate = calculateTaxEstimate(positions)
   const opportunities = findTaxLossOpportunities(positions)
   
+  // Calculate potential savings from tax loss harvesting
+  const harvestableLosses = opportunities.filter(o => o.recommendation === 'harvest')
+  const totalHarvestableLoss = harvestableLosses.reduce((sum, o) => sum + o.currentLoss, 0)
+  const potentialSavings = totalHarvestableLoss * estimate.effectiveTaxRate / 100
+
   return {
     unrealizedGain: totalUnrealizedGain,
     unrealizedGainFormatted: totalUnrealizedGain >= 0 
@@ -202,7 +207,8 @@ export function getTaxSummary(positions: Position[]) {
       : `-$${Math.abs(totalUnrealizedGain).toLocaleString()}`,
     estimatedTax: estimate.estimatedTaxIfSoldNow,
     effectiveRate: estimate.effectiveTaxRate,
-    harvestableLosses: opportunities.filter(o => o.recommendation === 'harvest'),
+    potentialSavings,
+    harvestableLosses,
     totalOpportunities: opportunities.length
   }
 }
