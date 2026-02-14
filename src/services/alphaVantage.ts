@@ -1,3 +1,4 @@
+// Enhanced Alpha Vantage service with auto-refresh and better rate limiting
 const API_KEY = 'URF2ZWCAUMR701W5'
 const BASE_URL = 'https://www.alphavantage.co/query'
 
@@ -5,49 +6,98 @@ interface PriceData {
   price: number
   change: number
   changePercent: number
+  volume?: number
   lastUpdated: string
 }
 
-// Cache prices to avoid API limits (5 calls per minute)
-const priceCache: Map<string, { data: PriceData; timestamp: number }> = new Map()
-const CACHE_DURATION = 60000 // 1 minute
+interface CachedPrice {
+  data: PriceData
+  timestamp: number
+}
+
+// Cache with 60 second TTL to respect rate limits
+const priceCache: Map<string, CachedPrice> = new Map()
+const CACHE_TTL = 60000 // 1 minute
+const RATE_LIMIT_DELAY = 12000 // 12 seconds between calls (5 calls/min max)
+
+let lastRequestTime = 0
+let consecutiveErrors = 0
+
+// Rate limited fetch with queue
+async function rateLimitedFetch(url: string): Promise<Response | null> {
+  const now = Date.now()
+  const timeSinceLastRequest = now - lastRequestTime
+  
+  if (timeSinceLastRequest < RATE_LIMIT_DELAY) {
+    const waitTime = RATE_LIMIT_DELAY - timeSinceLastRequest
+    await new Promise(resolve => setTimeout(resolve, waitTime))
+  }
+  
+  try {
+    lastRequestTime = Date.now()
+    const response = await fetch(url)
+    
+    if (response.status === 429) {
+      console.warn('Rate limit hit, backing off...')
+      consecutiveErrors++
+      return null
+    }
+    
+    if (!response.ok) {
+      throw new Error(`HTTP ${response.status}`)
+    }
+    
+    consecutiveErrors = 0
+    return response
+  } catch (error) {
+    console.error('Fetch error:', error)
+    consecutiveErrors++
+    return null
+  }
+}
 
 export async function getStockPrice(symbol: string): Promise<PriceData | null> {
   const cacheKey = symbol.toUpperCase()
   const cached = priceCache.get(cacheKey)
   
-  if (cached && Date.now() - cached.timestamp < CACHE_DURATION) {
+  // Return cached data if still fresh
+  if (cached && Date.now() - cached.timestamp < CACHE_TTL) {
+    console.log(`Using cached price for ${symbol}`)
     return cached.data
   }
 
+  const response = await rateLimitedFetch(
+    `${BASE_URL}?function=GLOBAL_QUOTE&symbol=${cacheKey}&apikey=${API_KEY}`
+  )
+  
+  if (!response) return cached?.data || null
+
   try {
-    const response = await fetch(
-      `${BASE_URL}?function=GLOBAL_QUOTE&symbol=${cacheKey}&apikey=${API_KEY}`
-    )
     const data = await response.json()
-    
     const quote = data['Global Quote']
+    
     if (!quote || Object.keys(quote).length === 0) {
       console.warn(`No data for ${symbol}`)
-      return null
+      return cached?.data || null
     }
 
     const priceData: PriceData = {
       price: parseFloat(quote['05. price']),
       change: parseFloat(quote['09. change']),
-      changePercent: parseFloat(quote['10. change percent'].replace('%', '')),
+      changePercent: parseFloat(quote['10. change percent']?.replace('%', '') || '0'),
+      volume: parseInt(quote['06. volume']),
       lastUpdated: quote['07. latest trading day']
     }
 
     priceCache.set(cacheKey, { data: priceData, timestamp: Date.now() })
     return priceData
   } catch (error) {
-    console.error(`Error fetching ${symbol}:`, error)
-    return null
+    console.error(`Error parsing ${symbol}:`, error)
+    return cached?.data || null
   }
 }
 
-// Get multiple prices with rate limiting
+// Batch fetch multiple stocks with rate limiting
 export async function getMultiplePrices(symbols: string[]): Promise<Map<string, PriceData>> {
   const results = new Map<string, PriceData>()
   
@@ -56,44 +106,37 @@ export async function getMultiplePrices(symbols: string[]): Promise<Map<string, 
     if (data) {
       results.set(symbol.toUpperCase(), data)
     }
-    // Rate limit: wait 12 seconds between calls (5 per minute max)
-    if (symbols.indexOf(symbol) < symbols.length - 1) {
-      await new Promise(resolve => setTimeout(resolve, 12000))
-    }
   }
   
   return results
 }
 
-// Crypto prices (Alpha Vantage supports crypto too)
-export async function getCryptoPrice(symbol: string): Promise<PriceData | null> {
-  const cacheKey = `CRYPTO_${symbol.toUpperCase()}`
-  const cached = priceCache.get(cacheKey)
-  
-  if (cached && Date.now() - cached.timestamp < CACHE_DURATION) {
-    return cached.data
+// Get API status
+export function getApiStatus(): { 
+  isRateLimited: boolean 
+  consecutiveErrors: number
+  lastRequestTime: number
+} {
+  return {
+    isRateLimited: consecutiveErrors > 2,
+    consecutiveErrors,
+    lastRequestTime
   }
+}
 
-  try {
-    const response = await fetch(
-      `${BASE_URL}?function=CURRENCY_EXCHANGE_RATE&from_currency=${symbol}&to_currency=USD&apikey=${API_KEY}`
-    )
-    const data = await response.json()
-    
-    const rate = data['Realtime Currency Exchange Rate']
-    if (!rate) return null
+// Reset error count (call after successful batch)
+export function resetErrorCount() {
+  consecutiveErrors = 0
+}
 
-    const priceData: PriceData = {
-      price: parseFloat(rate['5. Exchange Rate']),
-      change: 0, // Not provided in this endpoint
-      changePercent: 0,
-      lastUpdated: rate['6. Last Refreshed']
-    }
-
-    priceCache.set(cacheKey, { data: priceData, timestamp: Date.now() })
-    return priceData
-  } catch (error) {
-    console.error(`Error fetching crypto ${symbol}:`, error)
-    return null
+// Get cache info
+export function getCacheInfo(): { size: number; oldestEntry: number } {
+  let oldest = Date.now()
+  priceCache.forEach((cached) => {
+    if (cached.timestamp < oldest) oldest = cached.timestamp
+  })
+  return {
+    size: priceCache.size,
+    oldestEntry: oldest
   }
 }

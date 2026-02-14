@@ -354,6 +354,17 @@ export default function App() {
     return () => clearInterval(interval)
   }, [autoRefreshEnabled, refreshInterval, positions])
 
+  // Auto-fetch prices on component mount (with 3 second delay)
+  useEffect(() => {
+    const timer = setTimeout(() => {
+      if (!lastUpdate) {
+        refreshPrices()
+      }
+    }, 3000)
+    
+    return () => clearTimeout(timer)
+  }, []) // Only run on mount
+
   // Check price alerts
   const checkPriceAlerts = (currentPositions: Position[]) => {
     priceAlerts.forEach(alert => {
@@ -436,6 +447,17 @@ export default function App() {
               </div>
             </div>
             <div className="flex items-center gap-4">
+              {/* API Status Badge */}
+              <div className={`px-3 py-1 rounded-full text-xs font-medium ${
+                isRefreshing ? 'bg-hf-gold/20 text-hf-gold' : 
+                hasPriceData ? 'bg-hf-green/20 text-hf-green' : 
+                'bg-hf-red/20 text-hf-red'
+              }`}>
+                {isRefreshing ? '● Fetching' : 
+                 hasPriceData ? '● Live' : 
+                 '● No Data'}
+              </div>
+              
               <button 
                 onClick={refreshPrices}
                 disabled={isRefreshing}
@@ -444,15 +466,24 @@ export default function App() {
               >
                 <RefreshCw size={20} className={isRefreshing ? 'animate-spin' : ''} />
               </button>
+              
               <button className="p-2 hover:bg-hf-border rounded-lg relative">
                 <Bell size={20} />
                 <span className="absolute top-1 right-1 w-2 h-2 bg-hf-red rounded-full"></span>
               </button>
+              
               <div className="text-right">
                 <p className="text-sm text-gray-400">Portfolio Value</p>
-                <p className="text-xl font-bold">${totalValue.toLocaleString('en-US', { minimumFractionDigits: 2 })}</p>
-                {lastUpdate && (
-                  <p className="text-xs text-gray-500">Updated: {lastUpdate.toLocaleTimeString()}</p>
+                {hasPriceData ? (
+                  <>
+                    <p className="text-xl font-bold">${totalValue.toLocaleString('en-US', { minimumFractionDigits: 2 })}</p>
+                    <p className="text-xs text-gray-500">Updated: {lastUpdate?.toLocaleTimeString()}</p>
+                  </>
+                ) : (
+                  <>
+                    <p className="text-xl font-bold text-gray-600">No Data</p>
+                    <p className="text-xs text-gray-500">Click refresh to fetch</p>
+                  </>
                 )}
               </div>
             </div>
@@ -727,7 +758,7 @@ export default function App() {
                     <div>
                       <label className="text-sm text-gray-400">Refresh every (minutes)</label>
                       <div className="flex gap-2 mt-2">
-                        {[5, 15, 30, 60].map(min => (
+                        {[2, 5, 15, 30].map(min => (
                           <button
                             key={min}
                             onClick={() => setRefreshInterval(min)}
@@ -738,8 +769,17 @@ export default function App() {
                         ))}
                       </div>
                       <p className="text-xs text-gray-500 mt-2">
-                        Note: Alpha Vantage free tier = 5 calls/min max
+                        Note: Each position requires 1 API call. With {positions.length} positions, 
+                        full refresh takes ~{positions.length * 12} seconds (5 calls/min limit)
                       </p>
+                      <div className="mt-3 p-2 bg-hf-dark rounded-lg">
+                        <p className="text-xs text-gray-400">
+                          Last successful fetch: {lastUpdate ? lastUpdate.toLocaleTimeString() : 'Never'}
+                        </p>
+                        <p className="text-xs text-gray-400 mt-1">
+                          Status: {isRefreshing ? 'Fetching...' : hasPriceData ? 'Live' : 'Waiting for data'}
+                        </p>
+                      </div>
                     </div>
                   )}
                 </div>
