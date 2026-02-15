@@ -1,5 +1,5 @@
 // NewsAPI Service for financial news
-const API_KEY = 'YOUR_NEWSAPI_KEY' // Get from https://newsapi.org
+const API_KEY = '978915d1fcbe404ab5c25266df3a2667'
 const BASE_URL = 'https://newsapi.org/v2'
 
 export interface NewsArticle {
@@ -14,78 +14,101 @@ export interface NewsArticle {
   sentiment: 'positive' | 'negative' | 'neutral'
 }
 
-// Mock news data for demo (until API key added)
-const MOCK_NEWS: NewsArticle[] = [
-  {
-    id: '1',
-    title: 'Fed Signals Potential Rate Cuts in Q3',
-    description: 'Federal Reserve officials hint at possible interest rate reductions later this year as inflation shows signs of cooling.',
-    source: 'Bloomberg',
-    url: '#',
-    publishedAt: new Date().toISOString(),
-    sentiment: 'positive',
-    ticker: 'SPY'
-  },
-  {
-    id: '2',
-    title: 'NVIDIA Announces Next-Gen AI Chips',
-    description: 'New Blackwell architecture promises 30x performance improvement for AI workloads.',
-    source: 'Reuters',
-    url: '#',
-    publishedAt: new Date(Date.now() - 3600000).toISOString(),
-    sentiment: 'positive',
-    ticker: 'NVDA'
-  },
-  {
-    id: '3',
-    title: 'Apple Vision Pro Sales Exceed Expectations',
-    description: 'Early adopters praise mixed-reality headset as company ramps production.',
-    source: 'TechCrunch',
-    url: '#',
-    publishedAt: new Date(Date.now() - 7200000).toISOString(),
-    sentiment: 'positive',
-    ticker: 'AAPL'
-  },
-  {
-    id: '4',
-    title: 'Tech Sector Faces Regulatory Pressure',
-    description: 'EU and US regulators announce new antitrust investigations targeting major tech companies.',
-    source: 'WSJ',
-    url: '#',
-    publishedAt: new Date(Date.now() - 10800000).toISOString(),
-    sentiment: 'negative',
-    ticker: 'MSFT'
-  },
-  {
-    id: '5',
-    title: 'Bitcoin ETF Inflows Reach Record High',
-    description: 'Institutional investors pour billions into newly approved spot Bitcoin ETFs.',
-    source: 'CoinDesk',
-    url: '#',
-    publishedAt: new Date(Date.now() - 14400000).toISOString(),
-    sentiment: 'positive',
-    ticker: 'BTC'
-  }
-]
+interface NewsAPIResponse {
+  status: string
+  articles: Array<{
+    title: string
+    description: string
+    source: { name: string }
+    url: string
+    publishedAt: string
+    urlToImage?: string
+  }>
+}
 
-// Fetch news for specific tickers
+// Fetch real news from NewsAPI
 export async function getNewsForTickers(tickers: string[]): Promise<NewsArticle[]> {
-  // For now, return mock data filtered by tickers
-  // In production, use: `${BASE_URL}/everything?q=${tickers.join(' OR ')}&apiKey=${API_KEY}`
-  
-  if (!tickers.length) return MOCK_NEWS
-  
-  return MOCK_NEWS.filter(news => 
-    tickers.some(ticker => 
-      news.ticker === ticker || 
-      news.title.toLowerCase().includes(ticker.toLowerCase())
-    )
-  )
+  try {
+    // Build search query - include tickers and company names
+    const query = tickers.length > 0 
+      ? tickers.join(' OR ')
+      : 'stock market finance'
+    
+    const url = `${BASE_URL}/everything?q=${encodeURIComponent(query)}&language=en&sortBy=publishedAt&pageSize=20&apiKey=${API_KEY}`
+    
+    const response = await fetch(url)
+    
+    if (!response.ok) {
+      console.error('NewsAPI error:', response.status)
+      return getFallbackNews(tickers)
+    }
+    
+    const data: NewsAPIResponse = await response.json()
+    
+    if (data.status !== 'ok' || !data.articles) {
+      return getFallbackNews(tickers)
+    }
+    
+    // Transform to our format
+    return data.articles.map((article, index) => {
+      const sentiment = analyzeSentiment(article.title + ' ' + (article.description || ''))
+      const ticker = tickers.find(t => 
+        article.title.toLowerCase().includes(t.toLowerCase()) ||
+        (article.description && article.description.toLowerCase().includes(t.toLowerCase()))
+      )
+      
+      return {
+        id: `news-${index}-${Date.now()}`,
+        title: article.title,
+        description: article.description || '',
+        source: article.source.name,
+        url: article.url,
+        publishedAt: article.publishedAt,
+        urlToImage: article.urlToImage,
+        ticker,
+        sentiment
+      }
+    })
+  } catch (error) {
+    console.error('Failed to fetch news:', error)
+    return getFallbackNews(tickers)
+  }
 }
 
 // Fetch general market news
 export async function getMarketNews(): Promise<NewsArticle[]> {
-  return MOCK_NEWS
+  return getNewsForTickers([])
+}
+
+// Fallback news if API fails
+function getFallbackNews(tickers: string[]): NewsArticle[] {
+  const fallback: NewsArticle[] = [
+    {
+      id: '1',
+      title: 'Markets Open Mixed Amid Earnings Season',
+      description: 'Major indices showing varied performance as companies report quarterly results.',
+      source: 'Market Watch',
+      url: '#',
+      publishedAt: new Date().toISOString(),
+      sentiment: 'neutral'
+    },
+    {
+      id: '2',
+      title: 'Fed Watch: Interest Rate Decision Looming',
+      description: 'Investors await Federal Reserve announcement on monetary policy direction.',
+      source: 'Reuters',
+      url: '#',
+      publishedAt: new Date(Date.now() - 3600000).toISOString(),
+      sentiment: 'neutral'
+    }
+  ]
+  
+  if (!tickers.length) return fallback
+  
+  return fallback.map(news => ({
+    ...news,
+    ticker: tickers[0]
+  }))
 }
 
 // Get news impact score (1-10)
@@ -126,8 +149,8 @@ export function getImpactScore(article: NewsArticle): number {
 
 // Simple sentiment analysis
 export function analyzeSentiment(text: string): 'positive' | 'negative' | 'neutral' {
-  const positive = ['surge', 'rally', 'gain', 'profit', 'growth', 'beat', 'exceed', 'record', 'high', 'bull', 'upgrade', 'buy', 'outperform']
-  const negative = ['crash', 'plunge', 'loss', 'decline', 'drop', 'miss', 'fall', 'low', 'bear', 'downgrade', 'sell', 'underperform', 'investigation', 'lawsuit', 'fraud']
+  const positive = ['surge', 'rally', 'gain', 'profit', 'growth', 'beat', 'exceed', 'record', 'high', 'bull', 'upgrade', 'buy', 'outperform', 'moon', 'rocket', 'soar']
+  const negative = ['crash', 'plunge', 'loss', 'decline', 'drop', 'miss', 'fall', 'low', 'bear', 'downgrade', 'sell', 'underperform', 'investigation', 'lawsuit', 'fraud', 'crash', 'dump']
   
   const textLower = text.toLowerCase()
   let posCount = positive.filter(w => textLower.includes(w)).length
