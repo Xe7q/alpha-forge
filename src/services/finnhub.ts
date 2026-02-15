@@ -132,6 +132,13 @@ export async function getQuote(symbol: string): Promise<PriceData | null> {
     )
     
     if (!response.ok) {
+      console.error(`Finnhub API error for ${symbol}:`, response.status)
+      if (response.status === 401) {
+        console.error('API Key may be invalid or expired')
+      }
+      if (response.status === 429) {
+        console.error('Rate limit exceeded - wait a minute')
+      }
       throw new Error(`HTTP ${response.status}`)
     }
     

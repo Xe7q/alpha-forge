@@ -355,7 +355,7 @@ export default function App() {
       // Subscribe to WebSocket for real-time updates
       subscribeAllToWebSocket()
     } else {
-      setRefreshError('Failed to fetch prices. Please try again.')
+      setRefreshError('Unable to fetch live prices. Click Refresh or check connection. Prices may be delayed.')
     }
     
     setIsRefreshing(false)
