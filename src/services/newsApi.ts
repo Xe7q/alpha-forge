@@ -14,6 +14,18 @@ export interface NewsArticle {
   sentiment: 'positive' | 'negative' | 'neutral'
 }
 
+// Fetch curated news from local JSON
+async function getCuratedNews(): Promise<NewsArticle[]> {
+  try {
+    const response = await fetch('/curated-news.json')
+    if (!response.ok) throw new Error('Failed to load curated news')
+    return await response.json()
+  } catch (error) {
+    console.error('Failed to load curated news:', error)
+    return []
+  }
+}
+
 interface NewsAPIResponse {
   status: string
   articles: Array<{
@@ -39,13 +51,18 @@ export async function getNewsForTickers(tickers: string[]): Promise<NewsArticle[
     const response = await fetch(url)
     
     if (!response.ok) {
-      console.error('NewsAPI error:', response.status)
+      console.error('NewsAPI error:', response.status, '- Using curated news')
+      const curated = await getCuratedNews()
+      if (curated.length > 0) return curated
       return getFallbackNews(tickers)
     }
     
     const data: NewsAPIResponse = await response.json()
     
-    if (data.status !== 'ok' || !data.articles) {
+    if (data.status !== 'ok' || !data.articles || data.articles.length === 0) {
+      console.log('NewsAPI returned no articles - Using curated news')
+      const curated = await getCuratedNews()
+      if (curated.length > 0) return curated
       return getFallbackNews(tickers)
     }
     
@@ -70,13 +87,18 @@ export async function getNewsForTickers(tickers: string[]): Promise<NewsArticle[
       }
     })
   } catch (error) {
-    console.error('Failed to fetch news:', error)
+    console.error('Failed to fetch news:', error, '- Using curated news')
+    const curated = await getCuratedNews()
+    if (curated.length > 0) return curated
     return getFallbackNews(tickers)
   }
 }
 
 // Fetch general market news
 export async function getMarketNews(): Promise<NewsArticle[]> {
+  // Try curated news first for better reliability
+  const curated = await getCuratedNews()
+  if (curated.length > 0) return curated
   return getNewsForTickers([])
 }
 
