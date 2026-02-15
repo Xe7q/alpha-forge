@@ -1,5 +1,5 @@
 // Finnhub API Service - Real-time price streaming
-const API_KEY = 'd687159r01qi2if71n70d687159r01qi2if71n7g'
+export const API_KEY = 'd687159r01qi2if71n70d687159r01qi2if71n7g'
 const BASE_URL = 'https://finnhub.io/api/v1'
 const WS_URL = `wss://ws.finnhub.io?token=${API_KEY}`
 

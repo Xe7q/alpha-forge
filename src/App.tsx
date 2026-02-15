@@ -13,12 +13,11 @@ import {
   subscribeToSymbol, 
   unsubscribeFromSymbol, 
   closeWebSocket,
-  getQuote,
-  getMultipleQuotes,
   getWebSocketStatus,
-  PriceData 
+  PriceData as FinnhubPriceData
 } from './services/finnhub'
 import { getNewsForTickers, NewsArticle } from './services/newsApi'
+import { getMultiplePricesWithFallback } from './services/priceService'
 import { calculateRiskMetrics, RiskMetrics, getRiskLevelColor, getRiskLevelBg } from './services/riskAnalysis'
 import { getChartData, getPerformanceMetrics, savePortfolioSnapshot } from './services/portfolioHistory'
 import { getTaxSummary, findTaxLossOpportunities, calculateTaxEstimate } from './services/taxReporting'
@@ -332,18 +331,24 @@ export default function App() {
     localStorage.setItem('alpha-forge-positions', JSON.stringify(positions))
   }, [positions])
   
-  // Fetch real prices via REST API (fallback/initial load)
+  // Fetch real prices via REST API with fallback (Finnhub → Alpha Vantage)
   const refreshPrices = async () => {
     setIsRefreshing(true)
     setRefreshError(null)
     
     const symbols = positions.map(p => p.ticker)
-    const quotes = await getMultipleQuotes(symbols)
+    console.log('Fetching prices for:', symbols)
+    
+    // Use combined service with fallback
+    const quotes = await getMultiplePricesWithFallback(symbols)
+    
+    console.log('Received quotes:', quotes.size, 'of', symbols.length)
     
     if (quotes.size > 0) {
       const updatedPositions = positions.map(pos => {
         const quote = quotes.get(pos.ticker.toUpperCase())
         if (quote) {
+          console.log(`${pos.ticker}: $${quote.price} (from ${quote.source})`)
           return { ...pos, currentPrice: quote.price }
         }
         return pos
@@ -355,7 +360,7 @@ export default function App() {
       // Subscribe to WebSocket for real-time updates
       subscribeAllToWebSocket()
     } else {
-      setRefreshError('Unable to fetch live prices. Click Refresh or check connection. Prices may be delayed.')
+      setRefreshError('Unable to fetch live prices. Both Finnhub and Alpha Vantage failed. Check internet connection.')
     }
     
     setIsRefreshing(false)
@@ -369,7 +374,7 @@ export default function App() {
   }
   
   // Handle real-time price updates
-  const handlePriceUpdate = (priceData: PriceData) => {
+  const handlePriceUpdate = (priceData: FinnhubPriceData) => {
     setPositions(prevPositions => {
       return prevPositions.map(pos => {
         if (pos.ticker.toUpperCase() === priceData.symbol.toUpperCase()) {
