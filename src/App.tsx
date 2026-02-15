@@ -22,6 +22,9 @@ import { calculateRiskMetrics, RiskMetrics, getRiskLevelColor, getRiskLevelBg } 
 import { getChartData, getPerformanceMetrics, savePortfolioSnapshot } from './services/portfolioHistory'
 import { getTaxSummary, findTaxLossOpportunities, calculateTaxEstimate } from './services/taxReporting'
 import { analyzePortfolio, getInvestmentAdvice } from './services/aiAdvisor'
+import { getDividendSummary, getDividendCalendar, DividendEvent } from './services/dividendTracker'
+import { getEarningsCalendar, EarningsEvent, getEarningsImpactColor, getEarningsTimeLabel } from './services/earningsCalendar'
+import { downloadCsv, importFromCsv, downloadTemplate, CsvPosition } from './services/csvImportExport'
 
 // Types
 interface Position {
@@ -306,7 +309,7 @@ export default function App() {
       return []
     }
   })
-  const [activeTab, setActiveTab] = useState<'overview' | 'positions' | 'analysis' | 'performance' | 'tax' | 'ai' | 'news'>('overview')
+  const [activeTab, setActiveTab] = useState<'overview' | 'positions' | 'analysis' | 'performance' | 'tax' | 'ai' | 'dividends' | 'earnings' | 'import' | 'news'>('overview')
   const [showAddModal, setShowAddModal] = useState(false)
   const [selectedPosition, setSelectedPosition] = useState<Position | null>(null)
   const [isRefreshing, setIsRefreshing] = useState(false)
@@ -490,6 +493,26 @@ export default function App() {
     setPriceAlerts(priceAlerts.filter(a => a.id !== id))
   }
   
+  // Handle CSV import
+  const handleCsvUpload = async (file: File) => {
+    const result = await importFromCsv(file)
+    
+    if (result.errors.length > 0) {
+      alert('Import errors:\n' + result.errors.join('\n'))
+    }
+    
+    if (result.positions.length > 0) {
+      const newPositions = result.positions.map(pos => ({
+        ...pos,
+        id: Date.now().toString() + Math.random().toString(36).substr(2, 9),
+        currentPrice: 0
+      }))
+      
+      setPositions([...positions, ...newPositions])
+      alert(`Successfully imported ${newPositions.length} positions!`)
+    }
+  }
+  
   // Calculations (only if we have data)
   const totalValue = hasPriceData 
     ? positions.reduce((sum, pos) => sum + (pos.shares * (pos.currentPrice || pos.avgPrice)), 0)
@@ -600,6 +623,9 @@ export default function App() {
               { id: 'performance', label: 'Performance', icon: BarChart3 },
               { id: 'tax', label: 'Tax Center', icon: Shield },
               { id: 'ai', label: 'AI Advisor', icon: Zap },
+              { id: 'dividends', label: 'Dividends', icon: Wallet },
+              { id: 'earnings', label: 'Earnings', icon: Activity },
+              { id: 'import', label: 'Import/Export', icon: Globe },
               { id: 'news', label: 'News', icon: Globe },
             ].map(({ id, label, icon: Icon }) => (
               <button
@@ -1620,6 +1646,239 @@ export default function App() {
                 </>
               )
             })()}
+          </div>
+        )}
+
+        {activeTab === 'dividends' && (
+          <div className="space-y-6">
+            <h2 className="text-xl font-bold">Dividend Tracker</h2>
+            
+            {(() => {
+              const summary = getDividendSummary(positions)
+              const calendar = getDividendCalendar(positions)
+              return (
+                <>
+                  {/* Dividend Summary Cards */}
+                  <div className="grid grid-cols-1 md:grid-cols-4 gap-6">
+                    <Card>
+                      <p className="text-sm text-gray-400">Annual Dividend Income</p>
+                      <p className="text-2xl font-bold mt-1 text-hf-green">
+                        ${summary.annualIncome.toLocaleString('en-US', { minimumFractionDigits: 2 })}
+                      </p>
+                    </Card>
+                    <Card>
+                      <p className="text-sm text-gray-400">Monthly Average</p>
+                      <p className="text-2xl font-bold mt-1">
+                        ${summary.monthlyAverage.toLocaleString('en-US', { minimumFractionDigits: 2 })}
+                      </p>
+                    </Card>
+                    <Card>
+                      <p className="text-sm text-gray-400">Portfolio Yield</p>
+                      <p className="text-2xl font-bold mt-1">
+                        {summary.portfolioYield.toFixed(2)}%
+                      </p>
+                    </Card>
+                    <Card>
+                      <p className="text-sm text-gray-400">Yield on Cost</p>
+                      <p className="text-2xl font-bold mt-1">
+                        {summary.yieldOnCost.toFixed(2)}%
+                      </p>
+                    </Card>
+                  </div>
+                  
+                  {/* Upcoming Dividends */}
+                  <Card>
+                    <h3 className="text-lg font-bold mb-4">📅 Upcoming Dividends</h3>
+                    {calendar.length === 0 ? (
+                      <p className="text-gray-400">No dividend-paying stocks in portfolio.</p>
+                    ) : (
+                      <div className="space-y-3">
+                        {calendar.slice(0, 10).map((div, i) => (
+                          <div key={i} className="flex items-center justify-between p-3 bg-hf-dark rounded-lg">
+                            <div className="flex items-center gap-4">
+                              <span className="font-mono font-bold text-hf-blue">{div.ticker}</span>
+                              <div>
+                                <p className="text-sm">${div.amount.toFixed(2)}/share</p>
+                                <p className="text-xs text-gray-400">{div.frequency}</p>
+                              </div>
+                            </div>
+                            <div className="text-right">
+                              <p className="text-sm">Ex-Date: <span className="text-hf-gold">{div.exDate}</span></p>
+                              <p className="text-xs text-gray-400">Pay Date: {div.payDate}</p>
+                            </div>
+                          </div>
+                        ))}
+                      </div>
+                    )}
+                  </Card>
+                  
+                  {/* Recent Payments */}
+                  <Card>
+                    <h3 className="text-lg font-bold mb-4">💰 Recent Payments</h3>
+                    {summary.recentPayments.length === 0 ? (
+                      <p className="text-gray-400">No recent dividend payments.</p>
+                    ) : (
+                      <div className="space-y-2">
+                        {summary.recentPayments.map((payment, i) => (
+                          <div key={i} className="flex items-center justify-between p-2 hover:bg-hf-border/30 rounded">
+                            <span className="font-mono">{payment.ticker}</span>
+                            <span className="text-hf-green">+${payment.amount.toFixed(2)}</span>
+                            <span className="text-sm text-gray-400">{payment.payDate}</span>
+                          </div>
+                        ))}
+                      </div>
+                    )}
+                  </Card>
+                </>
+              )
+            })()}
+          </div>
+        )}
+
+        {activeTab === 'earnings' && (
+          <div className="space-y-6">
+            <h2 className="text-xl font-bold">Earnings Calendar</h2>
+            
+            {(() => {
+              const earnings = getEarningsCalendar(positions)
+              return (
+                <>
+                  {/* Summary Stats */}
+                  <div className="grid grid-cols-1 md:grid-cols-4 gap-6">
+                    <Card>
+                      <p className="text-sm text-gray-400">This Week</p>
+                      <p className="text-2xl font-bold mt-1">{earnings.thisWeek.length}</p>
+                      <p className="text-xs text-gray-500">companies reporting</p>
+                    </Card>
+                    <Card>
+                      <p className="text-sm text-gray-400">Next Week</p>
+                      <p className="text-2xl font-bold mt-1">{earnings.nextWeek.length}</p>
+                    </Card>
+                    <Card>
+                      <p className="text-sm text-gray-400">This Month</p>
+                      <p className="text-2xl font-bold mt-1">{earnings.thisMonth.length}</p>
+                    </Card>
+                    <Card>
+                      <p className="text-sm text-gray-400">High Impact</p>
+                      <p className="text-2xl font-bold mt-1 text-hf-gold">{earnings.highImpactEvents.length}</p>
+                    </Card>
+                  </div>
+                  
+                  {/* This Week's Earnings */}
+                  <Card>
+                    <h3 className="text-lg font-bold mb-4">📊 This Week</h3>
+                    {earnings.thisWeek.length === 0 ? (
+                      <p className="text-gray-400">No earnings reports this week.</p>
+                    ) : (
+                      <div className="space-y-3">
+                        {earnings.thisWeek.map((event, i) => (
+                          <div key={i} className="p-3 bg-hf-dark rounded-lg">
+                            <div className="flex items-center justify-between mb-2">
+                              <div className="flex items-center gap-3">
+                                <span className="font-mono font-bold">{event.ticker}</span>
+                                <span className="text-sm text-gray-400">{event.companyName}</span>
+                              </div>
+                              <span className={`text-xs px-2 py-1 rounded ${
+                                event.reportTime === 'before' ? 'bg-hf-green text-black' :
+                                event.reportTime === 'after' ? 'bg-hf-blue text-white' :
+                                'bg-hf-gold text-black'
+                              }`}>
+                                {getEarningsTimeLabel(event.reportTime)}
+                              </span>
+                            </div>
+                            <div className="grid grid-cols-3 gap-4 text-sm">
+                              <div>
+                                <span className="text-gray-400">EPS Est:</span>
+                                <span className="ml-2">${event.epsEstimate.toFixed(2)}</span>
+                              </div>
+                              <div>
+                                <span className="text-gray-400">Rev Est:</span>
+                                <span className="ml-2">${(event.revenueEstimate / 1e9).toFixed(1)}B</span>
+                              </div>
+                              <div>
+                                <span className="text-gray-400">Beat Rate:</span>
+                                <span className={`ml-2 ${getEarningsImpactColor(event.historicalBeatRate)}`}>
+                                  {event.historicalBeatRate}%
+                                </span>
+                              </div>
+                            </div>
+                            <p className="text-xs text-gray-500 mt-2">{event.reportDate}</p>
+                          </div>
+                        ))}
+                      </div>
+                    )}
+                  </Card>
+                </>
+              )
+            })()}
+          </div>
+        )}
+
+        {activeTab === 'import' && (
+          <div className="space-y-6">
+            <h2 className="text-xl font-bold">Import / Export</h2>
+            
+            {/* Export Section */}
+            <Card>
+              <h3 className="text-lg font-bold mb-4">📥 Export Portfolio</h3>
+              <p className="text-sm text-gray-400 mb-4">
+                Download your portfolio as CSV for backup or tax reporting.
+              </p>
+              <button 
+                onClick={() => downloadCsv(positions)}
+                className="bg-hf-blue hover:bg-blue-600 px-6 py-3 rounded-lg font-medium"
+              >
+                Download CSV
+              </button>
+            </Card>
+            
+            {/* Import Section */}
+            <Card>
+              <h3 className="text-lg font-bold mb-4">📤 Import Portfolio</h3>
+              <p className="text-sm text-gray-400 mb-4">
+                Upload positions from CSV file. Format: Ticker, Name, Shares, Avg Price, Sector, Type
+              </p>
+              
+              <div className="space-y-4">
+                <div 
+                  className="border-2 border-dashed border-hf-border rounded-lg p-8 text-center hover:border-hf-blue cursor-pointer transition-colors"
+                  onClick={() => document.getElementById('csv-upload')?.click()}
+                  onDragOver={(e) => e.preventDefault()}
+                  onDrop={(e) => {
+                    e.preventDefault()
+                    const file = e.dataTransfer.files[0]
+                    if (file) handleCsvUpload(file)
+                  }}
+                >
+                  <p className="text-gray-400">Click or drag CSV file here</p>
+                  <input 
+                    id="csv-upload" 
+                    type="file" 
+                    accept=".csv" 
+                    className="hidden"
+                    onChange={(e) => e.target.files?.[0] && handleCsvUpload(e.target.files[0])}
+                  />
+                </div>
+                
+                <button 
+                  onClick={downloadTemplate}
+                  className="text-sm text-hf-blue hover:text-white underline"
+                >
+                  Download CSV Template
+                </button>
+              </div>
+            </Card>
+            
+            {/* Sample Format */}
+            <Card>
+              <h3 className="text-lg font-bold mb-4">CSV Format Example</h3>
+              <pre className="bg-hf-dark p-4 rounded-lg text-sm overflow-x-auto">
+{`Ticker,Name,Shares,Avg Price,Sector,Type
+AAPL,Apple Inc.,100,175.50,Technology,stock
+MSFT,Microsoft Corp.,50,380.00,Technology,stock
+BTC,Bitcoin,0.5,42000,Crypto,crypto`}
+              </pre>
+            </Card>
           </div>
         )}
       </main>
