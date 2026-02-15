@@ -298,7 +298,15 @@ const StockSearchAdd: React.FC<{ onAdd: (pos: Omit<Position, 'id' | 'currentPric
 }
 
 export default function App() {
-  const [positions, setPositions] = useState<Position[]>(INITIAL_POSITIONS)
+  // Load positions from localStorage or use empty initial
+  const [positions, setPositions] = useState<Position[]>(() => {
+    try {
+      const saved = localStorage.getItem('alpha-forge-positions')
+      return saved ? JSON.parse(saved) : []
+    } catch {
+      return []
+    }
+  })
   const [activeTab, setActiveTab] = useState<'overview' | 'positions' | 'analysis' | 'performance' | 'tax' | 'ai' | 'news'>('overview')
   const [showAddModal, setShowAddModal] = useState(false)
   const [selectedPosition, setSelectedPosition] = useState<Position | null>(null)
@@ -318,6 +326,11 @@ export default function App() {
   // News state
   const [newsArticles, setNewsArticles] = useState<NewsArticle[]>([])
   const [newsFilter, setNewsFilter] = useState<'all' | 'holdings'>('all')
+  
+  // Save positions to localStorage whenever they change
+  useEffect(() => {
+    localStorage.setItem('alpha-forge-positions', JSON.stringify(positions))
+  }, [positions])
   
   // Fetch real prices via REST API (fallback/initial load)
   const refreshPrices = async () => {
