@@ -305,7 +305,21 @@ const StockSearchAdd: React.FC<{ onAdd: (pos: Omit<Position, 'id' | 'currentPric
   )
 }
 
+const CORRECT_PIN = '4520'
+
 export default function App() {
+  // Authentication state
+  const [isAuthenticated, setIsAuthenticated] = useState(() => {
+    const authTime = localStorage.getItem('alpha-forge-auth-time')
+    if (authTime) {
+      const hoursSinceAuth = (Date.now() - parseInt(authTime)) / (1000 * 60 * 60)
+      return hoursSinceAuth < 8 // Stay logged in for 8 hours
+    }
+    return false
+  })
+  const [pinInput, setPinInput] = useState('')
+  const [pinError, setPinError] = useState(false)
+  
   // Load positions from localStorage or use empty initial
   const [positions, setPositions] = useState<Position[]>(() => {
     try {
@@ -570,6 +584,111 @@ export default function App() {
     setPositions(positions.filter(p => p.id !== id))
   }
 
+  // Handle PIN submission
+  const handlePinSubmit = (e: React.FormEvent) => {
+    e.preventDefault()
+    if (pinInput === CORRECT_PIN) {
+      setIsAuthenticated(true)
+      setPinError(false)
+      localStorage.setItem('alpha-forge-auth-time', Date.now().toString())
+    } else {
+      setPinError(true)
+      setPinInput('')
+    }
+  }
+
+  // Lock dashboard
+  const handleLock = () => {
+    setIsAuthenticated(false)
+    localStorage.removeItem('alpha-forge-auth-time')
+    setPinInput('')
+  }
+
+  // Show lock screen if not authenticated
+  if (!isAuthenticated) {
+    return (
+      <div className="min-h-screen bg-hf-dark flex items-center justify-center">
+        <Card className="w-full max-w-sm text-center">
+          <div className="w-16 h-16 bg-gradient-to-br from-hf-blue to-hf-green rounded-xl flex items-center justify-center mx-auto mb-6">
+            <TrendingUp className="text-white" size={32} />
+          </div>
+          <h1 className="text-2xl font-bold mb-2">ALPHA FORGE</h1>
+          <p className="text-gray-400 mb-6">Enter PIN to access your dashboard</p>
+          
+          <form onSubmit={handlePinSubmit} className="space-y-4">
+            <div className="flex justify-center gap-2">
+              {[0, 1, 2, 3].map((i) => (
+                <div
+                  key={i}
+                  className={`w-12 h-14 rounded-lg border-2 flex items-center justify-center text-xl font-bold ${
+                    pinError ? 'border-hf-red bg-hf-red/10' : 'border-hf-border bg-hf-dark'
+                  }`}
+                >
+                  {pinInput[i] ? '•' : ''}
+                </div>
+              ))}
+            </div>
+            
+            <input
+              type="password"
+              inputMode="numeric"
+              pattern="[0-9]*"
+              maxLength={4}
+              value={pinInput}
+              onChange={(e) => {
+                setPinInput(e.target.value.replace(/\D/g, '').slice(0, 4))
+                setPinError(false)
+              }}
+              className="opacity-0 absolute"
+              autoFocus
+            />
+            
+            {pinError && (
+              <p className="text-hf-red text-sm">Incorrect PIN. Try again.</p>
+            )}
+            
+            <div className="grid grid-cols-3 gap-2 mt-4">
+              {[1, 2, 3, 4, 5, 6, 7, 8, 9].map((num) => (
+                <button
+                  key={num}
+                  type="button"
+                  onClick={() => pinInput.length < 4 && setPinInput(pinInput + num)}
+                  className="h-14 rounded-lg bg-hf-border/50 hover:bg-hf-border text-xl font-medium transition-colors"
+                >
+                  {num}
+                </button>
+              ))}
+              <button
+                type="button"
+                onClick={() => setPinInput(pinInput.slice(0, -1))}
+                className="h-14 rounded-lg bg-hf-border/50 hover:bg-hf-border text-sm transition-colors"
+              >
+                ⌫
+              </button>
+              <button
+                type="button"
+                onClick={() => pinInput.length < 4 && setPinInput(pinInput + '0')}
+                className="h-14 rounded-lg bg-hf-border/50 hover:bg-hf-border text-xl font-medium transition-colors"
+              >
+                0
+              </button>
+              <button
+                type="submit"
+                className="h-14 rounded-lg bg-hf-green hover:bg-green-600 text-black font-bold transition-colors"
+              >
+                →
+              </button>
+            </div>
+          </form>
+          
+          <p className="text-xs text-gray-500 mt-6">
+            Secured • Session expires after 8 hours
+          </p>
+        </Card>
+      </div>
+    )
+  }
+
   return (
     <div className="min-h-screen bg-hf-dark">
       {/* Header */}
@@ -614,6 +733,17 @@ export default function App() {
               <button className="p-2 hover:bg-hf-border rounded-lg relative">
                 <Bell size={20} />
                 <span className="absolute top-1 right-1 w-2 h-2 bg-hf-red rounded-full"></span>
+              </button>
+              
+              <button 
+                onClick={handleLock}
+                className="p-2 hover:bg-hf-border rounded-lg text-gray-400 hover:text-white"
+                title="Lock Dashboard"
+              >
+                <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
+                  <rect x="3" y="11" width="18" height="11" rx="2" ry="2"></rect>
+                  <path d="M7 11V7a5 5 0 0 1 10 0v4"></path>
+                </svg>
               </button>
               
               <div className="text-right">
