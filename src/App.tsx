@@ -475,10 +475,23 @@ export default function App() {
   
   // Connect iCal URL
   const connectICal = async (url: string) => {
-    setICalUrl(url)
-    saveICalUrl(url)
-    setCalendarSource('ical')
-    await loadICalData()
+    setCalendarLoading(true)
+    try {
+      const events = await fetchICalFromUrl(url)
+      console.log('Successfully fetched', events.length, 'events')
+      setICalEvents(events)
+      saveICalEvents(events)
+      setICalUrl(url)
+      saveICalUrl(url)
+      setCalendarSource('ical')
+      setCalendarLoading(false)
+      return true
+    } catch (error) {
+      console.error('Failed to connect iCal:', error)
+      setCalendarLoading(false)
+      alert(`Failed to connect calendar: ${(error as Error).message}`)
+      return false
+    }
   }
   
   // Disconnect iCal
@@ -2869,28 +2882,59 @@ BTC,Bitcoin,0.5,42000,Crypto,crypto`}
                 <div className="bg-hf-dark rounded-lg p-4 mb-4">
                   <p className="font-medium mb-2">📎 iCal URL (Recommended)</p>
                   <p className="text-sm text-gray-400 mb-3">Paste your Google Calendar's secret iCal URL</p>
-                  <div className="flex gap-2">
+                  <div className="space-y-2">
                     <input
                       type="url"
                       value={iCalUrl}
                       onChange={(e) => setICalUrl(e.target.value)}
                       placeholder="https://calendar.google.com/calendar/ical/..."
-                      className="flex-1 bg-hf-border/50 border border-hf-border rounded-lg p-2 text-sm"
+                      className="w-full bg-hf-border/50 border border-hf-border rounded-lg p-2 text-sm"
                     />
-                    <button
-                      onClick={() => {
-                        if (iCalUrl.includes('.ics')) {
-                          connectICal(iCalUrl)
-                          setShowCalendarModal(false)
-                        } else {
-                          alert('Please enter a valid iCal URL (ends with .ics)')
-                        }
-                      }}
-                      disabled={!iCalUrl}
-                      className="bg-hf-green hover:bg-green-600 text-black px-4 py-2 rounded-lg font-medium disabled:opacity-50"
-                    >
-                      Connect
-                    </button>
+                    <div className="flex gap-2">
+                      <button
+                        onClick={async () => {
+                          if (!iCalUrl.includes('.ics')) {
+                            alert('Please enter a valid iCal URL (should end with .ics)')
+                            return
+                          }
+                          setCalendarLoading(true)
+                          try {
+                            const success = await connectICal(iCalUrl)
+                            if (success) {
+                              setShowCalendarModal(false)
+                              alert(`Connected! Found ${getTodaysICalEvents(iCalEvents).length} events for today.`)
+                            }
+                          } catch (error) {
+                            alert(`Failed: ${(error as Error).message}`)
+                          }
+                          setCalendarLoading(false)
+                        }}
+                        disabled={!iCalUrl || calendarLoading}
+                        className="flex-1 bg-hf-green hover:bg-green-600 text-black px-4 py-2 rounded-lg font-medium disabled:opacity-50"
+                      >
+                        {calendarLoading ? 'Connecting...' : 'Connect'}
+                      </button>
+                      <button
+                        onClick={async () => {
+                          if (!iCalUrl.includes('.ics')) {
+                            alert('Please enter a valid iCal URL')
+                            return
+                          }
+                          setCalendarLoading(true)
+                          try {
+                            const events = await fetchICalFromUrl(iCalUrl)
+                            alert(`Test successful! Found ${events.length} total events, ${getTodaysICalEvents(events).length} for today.`)
+                          } catch (error) {
+                            alert(`Test failed: ${(error as Error).message}`)
+                          }
+                          setCalendarLoading(false)
+                        }}
+                        disabled={!iCalUrl || calendarLoading}
+                        className="bg-hf-blue hover:bg-blue-600 px-4 py-2 rounded-lg font-medium disabled:opacity-50"
+                      >
+                        {calendarLoading ? 'Testing...' : 'Test'}
+                      </button>
+                    </div>
                   </div>
                   <p className="text-xs text-gray-500 mt-2">
                     Find it in Google Calendar → Settings → Integrate calendar → Secret address

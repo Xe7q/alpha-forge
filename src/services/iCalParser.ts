@@ -15,23 +15,68 @@ export interface ICalEvent {
 // Parse iCal data from URL or content
 export async function fetchICalFromUrl(url: string): Promise<ICalEvent[]> {
   try {
-    // Use a CORS proxy or fetch directly if server allows
-    const response = await fetch(url, {
-      method: 'GET',
-      headers: {
-        'Accept': 'text/calendar, application/octet-stream'
-      }
-    })
+    // Decode URL encoded characters (like %40 -> @)
+    const decodedUrl = decodeURIComponent(url)
     
-    if (!response.ok) {
-      throw new Error(`Failed to fetch calendar: ${response.status}`)
+    console.log('Fetching iCal from:', decodedUrl)
+    
+    // Try with CORS proxy first (Google Calendar blocks direct CORS)
+    const corsProxies = [
+      '', // Try direct first
+      'https://api.allorigins.win/get?url=',
+      'https://corsproxy.io/?',
+    ]
+    
+    let lastError: Error | null = null
+    
+    for (const proxy of corsProxies) {
+      try {
+        const fetchUrl = proxy ? `${proxy}${encodeURIComponent(decodedUrl)}` : decodedUrl
+        console.log('Trying:', proxy ? 'with proxy' : 'direct')
+        
+        const response = await fetch(fetchUrl, {
+          method: 'GET',
+          headers: {
+            'Accept': 'text/calendar, text/plain, application/octet-stream, */*'
+          }
+        })
+        
+        if (!response.ok) {
+          console.log('Failed with status:', response.status)
+          continue
+        }
+        
+        let icalData = await response.text()
+        
+        // If using allorigins proxy, extract the contents field
+        if (proxy.includes('allorigins')) {
+          try {
+            const json = JSON.parse(icalData)
+            icalData = json.contents
+          } catch {
+            // Not JSON, use as-is
+          }
+        }
+        
+        console.log('Fetched data length:', icalData.length)
+        console.log('First 200 chars:', icalData.substring(0, 200))
+        
+        const events = parseICalData(icalData)
+        console.log('Parsed events:', events.length)
+        
+        if (events.length > 0) {
+          return events
+        }
+      } catch (error) {
+        lastError = error as Error
+        console.log('Attempt failed:', (error as Error).message)
+      }
     }
     
-    const icalData = await response.text()
-    return parseICalData(icalData)
+    throw lastError || new Error('Could not fetch calendar from any source')
   } catch (error) {
     console.error('Failed to fetch iCal:', error)
-    throw new Error('Could not fetch calendar. Make sure the URL is correct and publicly accessible.')
+    throw new Error(`Could not fetch calendar: ${(error as Error).message}`)
   }
 }
 
