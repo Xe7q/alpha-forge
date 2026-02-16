@@ -35,9 +35,10 @@ import {
 } from './services/taskManager'
 import { getPendingReminders, generateDailySummary, getFocusNotification } from './services/notifications'
 import { 
-  getTodaysCalendarEvents, getUpcomingEvents, syncCalendarToTasks,
-  CalendarEvent, getConnectedCalendars, saveConnectedCalendars,
-  getTimeUntilEvent, SyncedCalendar
+  isGoogleAuthenticated, getGoogleAuthUrl, handleOAuthCallback,
+  fetchTodaysEvents, fetchUpcomingEvents, fetchCalendars,
+  eventToTask, CalendarEvent, getTimeUntilEvent, formatEventTime,
+  clearGoogleToken
 } from './services/calendarSync'
 
 // Types
@@ -371,10 +372,12 @@ export default function App() {
   const [showCalendarModal, setShowCalendarModal] = useState(false)
   const [taskFilter, setTaskFilter] = useState<'all' | 'today' | 'overdue' | 'done'>('today')
   const [recurringTemplates, setRecurringTemplates] = useState<RecurringTaskTemplate[]>(getRecurringTemplates())
-  const [connectedCalendars, setConnectedCalendars] = useState<SyncedCalendar[]>(getConnectedCalendars())
   const [calendarEvents, setCalendarEvents] = useState<CalendarEvent[]>([])
+  const [googleAuthed, setGoogleAuthed] = useState(false)
+  const [calendars, setCalendars] = useState<Array<{ id: string; summary: string; primary?: boolean }>>([])
+  const [calendarLoading, setCalendarLoading] = useState(false)
   
-  // Initialize recurring tasks on mount
+  // Initialize recurring tasks and check Google auth on mount
   useEffect(() => {
     initializeRecurringTasks()
     // Generate recurring tasks for today
@@ -382,9 +385,46 @@ export default function App() {
     if (newRecurring.length > 0) {
       setTasks(prev => [...prev, ...newRecurring])
     }
-    // Load calendar events
-    setCalendarEvents(getTodaysCalendarEvents())
+    
+    // Check for OAuth callback
+    const token = handleOAuthCallback()
+    if (token) {
+      setGoogleAuthed(true)
+      loadCalendarData()
+    } else {
+      setGoogleAuthed(isGoogleAuthenticated())
+      if (isGoogleAuthenticated()) {
+        loadCalendarData()
+      }
+    }
   }, [])
+  
+  // Load calendar data
+  const loadCalendarData = async () => {
+    setCalendarLoading(true)
+    try {
+      const events = await fetchTodaysEvents()
+      setCalendarEvents(events)
+      const cals = await fetchCalendars()
+      setCalendars(cals)
+    } catch (error) {
+      console.error('Failed to load calendar:', error)
+    }
+    setCalendarLoading(false)
+  }
+  
+  // Connect Google Calendar
+  const connectGoogleCalendar = () => {
+    window.location.href = getGoogleAuthUrl()
+  }
+  
+  // Disconnect Google Calendar
+  const disconnectGoogleCalendar = () => {
+    clearGoogleToken()
+    setGoogleAuthed(false)
+    setCalendarEvents([])
+    setCalendars([])
+  }
   
   // Save tasks to localStorage
   useEffect(() => {
@@ -1419,49 +1459,66 @@ export default function App() {
                   <Card>
                     <div className="flex items-center justify-between mb-4">
                       <h3 className="text-lg font-bold">📅 Today's Schedule</h3>
-                      <button
-                        onClick={() => {
-                          const synced = syncCalendarToTasks()
-                          if (synced.length > 0) {
-                            setTasks([...tasks, ...synced])
-                          }
-                        }}
-                        className="text-sm text-hf-blue hover:text-white"
-                      >
-                        Sync to Tasks
-                      </button>
+                      {!googleAuthed ? (
+                        <button
+                          onClick={connectGoogleCalendar}
+                          className="text-sm bg-hf-blue hover:bg-blue-600 px-3 py-1 rounded"
+                        >
+                          Connect Google Calendar
+                        </button>
+                      ) : (
+                        <button
+                          onClick={loadCalendarData}
+                          disabled={calendarLoading}
+                          className="text-sm text-hf-blue hover:text-white disabled:opacity-50"
+                        >
+                          {calendarLoading ? 'Loading...' : 'Refresh'}
+                        </button>
+                      )}
                     </div>
-                    {calendarEvents.length === 0 ? (
-                      <p className="text-gray-400">No events scheduled for today.</p>
+                    
+                    {!googleAuthed ? (
+                      <div className="text-center py-8">
+                        <p className="text-4xl mb-2">📅</p>
+                        <p className="text-gray-400 mb-4">Connect your Google Calendar to see today's events</p>
+                        <button
+                          onClick={connectGoogleCalendar}
+                          className="bg-hf-blue hover:bg-blue-600 px-6 py-2 rounded-lg font-medium"
+                        >
+                          Connect Google Calendar
+                        </button>
+                      </div>
+                    ) : calendarLoading ? (
+                      <div className="text-center py-8 text-gray-400">
+                        <p>Loading your calendar...</p>
+                      </div>
+                    ) : calendarEvents.length === 0 ? (
+                      <p className="text-gray-400 text-center py-4">No events scheduled for today. Enjoy your free time! 🎉</p>
                     ) : (
                       <div className="space-y-2">
-                        {calendarEvents.map((event, i) => (
-                          <div key={i} className="flex items-center gap-4 p-3 bg-hf-dark rounded-lg">
-                            <div className="text-center min-w-[60px]">
+                        {calendarEvents.map((event) => (
+                          <div key={event.id} className="flex items-center gap-4 p-3 bg-hf-dark rounded-lg">
+                            <div className="text-center min-w-[70px]">
                               <p className="text-sm font-bold">
-                                {new Date(event.startTime).toLocaleTimeString('en-US', { hour: 'numeric', minute: '2-digit' })}
+                                {formatEventTime(event.startTime)}
                               </p>
                               <p className="text-xs text-gray-500">{getTimeUntilEvent(event)}</p>
                             </div>
-                            <div className="flex-1">
-                              <p className="font-medium">{event.title}</p>
+                            <div className="flex-1 min-w-0">
+                              <p className="font-medium truncate">{event.title}</p>
+                              {event.location && (
+                                <p className="text-xs text-gray-400 truncate">📍 {event.location}</p>
+                              )}
                               {event.isRecurring && (
                                 <span className="text-xs text-hf-blue">🔄 Recurring</span>
                               )}
                             </div>
                             <button
                               onClick={() => {
-                                const task = createTask({
-                                  title: `📅 ${event.title}`,
-                                  description: `Calendar event at ${new Date(event.startTime).toLocaleTimeString()}`,
-                                  priority: 'medium',
-                                  dueDate: event.startTime.split('T')[0],
-                                  tags: ['calendar'],
-                                  estimatedMinutes: Math.round((new Date(event.endTime).getTime() - new Date(event.startTime).getTime()) / (1000 * 60))
-                                })
+                                const task = createTask(eventToTask(event))
                                 setTasks([...tasks, task])
                               }}
-                              className="text-xs bg-hf-border/50 hover:bg-hf-blue px-3 py-1 rounded"
+                              className="text-xs bg-hf-border/50 hover:bg-hf-blue px-3 py-1 rounded whitespace-nowrap"
                             >
                               + Task
                             </button>
@@ -2701,70 +2758,121 @@ BTC,Bitcoin,0.5,42000,Crypto,crypto`}
         <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-50">
           <Card className="w-full max-w-lg">
             <h3 className="text-lg font-bold mb-4">📅 Calendar Integration</h3>
-            <p className="text-sm text-gray-400 mb-4">Sync events from your calendars</p>
             
-            <div className="space-y-3 mb-6">
-              {connectedCalendars.map(calendar => (
-                <div key={calendar.id} className="flex items-center justify-between p-3 bg-hf-dark rounded-lg">
-                  <div className="flex items-center gap-3">
-                    <div className="w-4 h-4 rounded" style={{ backgroundColor: calendar.color }}></div>
-                    <span>{calendar.name}</span>
+            {!googleAuthed ? (
+              <>
+                <p className="text-sm text-gray-400 mb-6">Connect your Google Calendar to sync events</p>
+                <div className="text-center py-8">
+                  <div className="w-16 h-16 bg-hf-blue/20 rounded-full flex items-center justify-center mx-auto mb-4">
+                    <span className="text-3xl">📅</span>
                   </div>
-                  <label className="flex items-center cursor-pointer">
-                    <input
-                      type="checkbox"
-                      checked={calendar.enabled}
-                      onChange={(e) => {
-                        const updated = connectedCalendars.map(c => 
-                          c.id === calendar.id ? { ...c, enabled: e.target.checked } : c
-                        )
-                        setConnectedCalendars(updated)
-                        saveConnectedCalendars(updated)
-                      }}
-                      className="sr-only"
-                    />
-                    <div className={`w-12 h-6 rounded-full transition-colors ${calendar.enabled ? 'bg-hf-green' : 'bg-hf-border'}`}>
-                      <div className={`w-5 h-5 bg-white rounded-full mt-0.5 transition-transform ${calendar.enabled ? 'translate-x-6' : 'translate-x-0.5'}`}></div>
-                    </div>
-                  </label>
+                  <p className="text-gray-400 mb-4">Connect your Google Calendar to:</p>
+                  <ul className="text-sm text-gray-500 text-left max-w-xs mx-auto mb-6 space-y-1">
+                    <li>✓ See today's events in Command Center</li>
+                    <li>✓ Convert events to tasks</li>
+                    <li>✓ Get notified before meetings</li>
+                  </ul>
+                  <button 
+                    onClick={connectGoogleCalendar}
+                    className="bg-hf-blue hover:bg-blue-600 px-6 py-3 rounded-lg font-medium"
+                  >
+                    Connect Google Calendar
+                  </button>
                 </div>
-              ))}
-            </div>
-            
-            <div className="border-t border-hf-border pt-4">
-              <p className="text-sm font-medium mb-3">Upcoming Events</p>
-              <div className="space-y-2 max-h-48 overflow-y-auto">
-                {getUpcomingEvents().slice(0, 5).map((event, i) => (
-                  <div key={i} className="flex items-center gap-3 p-2 bg-hf-dark rounded text-sm">
-                    <span className="text-gray-400">
-                      {new Date(event.startTime).toLocaleDateString()} {new Date(event.startTime).toLocaleTimeString([], {hour: '2-digit', minute:'2-digit'})}
-                    </span>
-                    <span className="flex-1">{event.title}</span>
+                <div className="flex justify-center mt-4">
+                  <button 
+                    onClick={() => setShowCalendarModal(false)} 
+                    className="text-gray-500 hover:text-white"
+                  >
+                    Cancel
+                  </button>
+                </div>
+              </>
+            ) : (
+              <>
+                <div className="flex items-center justify-between mb-4">
+                  <p className="text-sm text-green-400">✓ Connected to Google Calendar</p>
+                  <button 
+                    onClick={disconnectGoogleCalendar}
+                    className="text-xs text-hf-red hover:text-red-400"
+                  >
+                    Disconnect
+                  </button>
+                </div>
+                
+                <div className="space-y-3 mb-6 max-h-48 overflow-y-auto">
+                  {calendars.length === 0 ? (
+                    <p className="text-gray-400 text-center py-4">Loading calendars...</p>
+                  ) : (
+                    calendars.map(calendar => (
+                      <div key={calendar.id} className="flex items-center justify-between p-3 bg-hf-dark rounded-lg">
+                        <div className="flex items-center gap-3">
+                          <span className="text-lg">📅</span>
+                          <span>{calendar.summary}</span>
+                          {calendar.primary && (
+                            <span className="text-xs bg-hf-blue/30 text-hf-blue px-2 py-0.5 rounded">Primary</span>
+                          )}
+                        </div>
+                      </div>
+                    ))
+                  )}
+                </div>
+                
+                <div className="border-t border-hf-border pt-4">
+                  <p className="text-sm font-medium mb-3">Quick Actions</p>
+                  <div className="grid grid-cols-2 gap-3">
+                    <button
+                      onClick={async () => {
+                        try {
+                          const events = await fetchUpcomingEvents(7)
+                          const newTasks = events.map(eventToTask).map(createTask)
+                          setTasks([...tasks, ...newTasks])
+                          setShowCalendarModal(false)
+                        } catch (error) {
+                          alert('Failed to sync events')
+                        }
+                      }}
+                      className="p-3 bg-hf-dark rounded-lg hover:bg-hf-border text-left"
+                    >
+                      <p className="font-medium text-sm">Sync Next 7 Days</p>
+                      <p className="text-xs text-gray-500">Import all events as tasks</p>
+                    </button>
+                    <button
+                      onClick={async () => {
+                        try {
+                          const events = await fetchTodaysEvents()
+                          const newTasks = events.map(eventToTask).map(createTask)
+                          setTasks([...tasks, ...newTasks])
+                          setShowCalendarModal(false)
+                        } catch (error) {
+                          alert('Failed to sync events')
+                        }
+                      }}
+                      className="p-3 bg-hf-dark rounded-lg hover:bg-hf-border text-left"
+                    >
+                      <p className="font-medium text-sm">Sync Today Only</p>
+                      <p className="text-xs text-gray-500">Import today's events</p>
+                    </button>
                   </div>
-                ))}
-              </div>
-            </div>
-            
-            <div className="flex gap-3 mt-6">
-              <button 
-                onClick={() => setShowCalendarModal(false)} 
-                className="flex-1 py-2 border border-hf-border rounded-lg hover:bg-hf-border"
-              >
-                Close
-              </button>
-              <button 
-                onClick={() => {
-                  const synced = syncCalendarToTasks()
-                  if (synced.length > 0) {
-                    setTasks([...tasks, ...synced])
-                  }
-                  setShowCalendarModal(false)
-                }}
-                className="flex-1 py-2 bg-hf-blue hover:bg-blue-600 rounded-lg font-medium"
-              >
-                Sync Now
-              </button>
-            </div>
+                </div>
+                
+                <div className="flex gap-3 mt-6">
+                  <button 
+                    onClick={() => setShowCalendarModal(false)} 
+                    className="flex-1 py-2 border border-hf-border rounded-lg hover:bg-hf-border"
+                  >
+                    Close
+                  </button>
+                  <button 
+                    onClick={loadCalendarData}
+                    disabled={calendarLoading}
+                    className="flex-1 py-2 bg-hf-blue hover:bg-blue-600 rounded-lg font-medium disabled:opacity-50"
+                  >
+                    {calendarLoading ? 'Refreshing...' : 'Refresh'}
+                  </button>
+                </div>
+              </>
+            )}
           </Card>
         </div>
       )}

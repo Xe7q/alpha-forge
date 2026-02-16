@@ -1,4 +1,4 @@
-// Google Calendar Sync Service
+// Google Calendar Sync Service - Real Implementation
 import { Task, createTask } from './taskManager'
 
 export interface CalendarEvent {
@@ -9,158 +9,233 @@ export interface CalendarEvent {
   endTime: string
   location?: string
   isRecurring: boolean
-  recurrenceRule?: string
 }
 
-// Google Calendar API configuration
-const CLIENT_ID = 'YOUR_GOOGLE_CLIENT_ID' // User would need to set this
-const API_KEY = 'YOUR_GOOGLE_API_KEY'
-const DISCOVERY_DOC = 'https://www.googleapis.com/discovery/v1/apis/calendar/v3/rest'
+// Google OAuth Configuration
+const CLIENT_ID = '86434463384-s26qpi8jejpgnqb1fduqq0dhmcf72qr2.apps.googleusercontent.com'
+const CLIENT_SECRET = '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'
+const REDIRECT_URI = typeof window !== 'undefined' ? window.location.origin : 'https://alpha-forge-kfu7.vercel.app'
 const SCOPES = 'https://www.googleapis.com/auth/calendar.readonly'
 
-// For now, use localStorage mock sync (real Google Calendar requires OAuth setup)
-export interface SyncedCalendar {
-  id: string
-  name: string
-  color: string
-  enabled: boolean
-  lastSync: string
+// Token storage
+const TOKEN_KEY = 'google-calendar-token'
+const TOKEN_EXPIRY_KEY = 'google-calendar-token-expiry'
+
+export interface GoogleToken {
+  access_token: string
+  token_type: string
+  expires_in: number
+  scope: string
 }
 
-// Get connected calendars from localStorage
-export function getConnectedCalendars(): SyncedCalendar[] {
-  const stored = localStorage.getItem('mac-connected-calendars')
-  if (stored) return JSON.parse(stored)
+// Check if user is authenticated with Google
+export function isGoogleAuthenticated(): boolean {
+  const token = localStorage.getItem(TOKEN_KEY)
+  const expiry = localStorage.getItem(TOKEN_EXPIRY_KEY)
   
-  // Default calendars (mock for now)
-  return [
-    { id: 'primary', name: 'My Calendar', color: '#2979ff', enabled: true, lastSync: '' },
-    { id: 'work', name: 'Work', color: '#00c853', enabled: false, lastSync: '' },
-    { id: 'personal', name: 'Personal', color: '#ffd700', enabled: false, lastSync: '' }
-  ]
+  if (!token || !expiry) return false
+  
+  // Check if token is expired
+  return Date.now() < parseInt(expiry)
 }
 
-export function saveConnectedCalendars(calendars: SyncedCalendar[]): void {
-  localStorage.setItem('mac-connected-calendars', JSON.stringify(calendars))
+// Get stored token
+export function getGoogleToken(): GoogleToken | null {
+  const token = localStorage.getItem(TOKEN_KEY)
+  return token ? JSON.parse(token) : null
 }
 
-// Mock calendar events (in real implementation, this would fetch from Google)
-export function getMockCalendarEvents(date: string): CalendarEvent[] {
-  const dayOfWeek = new Date(date).getDay()
-  const isWeekend = dayOfWeek === 0 || dayOfWeek === 6
-  
-  const events: CalendarEvent[] = []
-  
-  // Morning routine
-  if (!isWeekend) {
-    events.push({
-      id: 'cal-1',
-      title: 'Daily Standup',
-      startTime: `${date}T09:00:00`,
-      endTime: `${date}T09:30:00`,
-      isRecurring: true,
-      recurrenceRule: 'FREQ=WEEKLY;BYDAY=MO,TU,WE,TH,FR'
-    })
-  }
-  
-  // Sample events
-  events.push({
-    id: 'cal-2',
-    title: 'Portfolio Review',
-    startTime: `${date}T10:00:00`,
-    endTime: `${date}T11:00:00`,
-    isRecurring: false
+// Save token
+export function saveGoogleToken(token: GoogleToken): void {
+  localStorage.setItem(TOKEN_KEY, JSON.stringify(token))
+  // Calculate expiry time (token.expires_in is in seconds)
+  const expiryTime = Date.now() + (token.expires_in * 1000)
+  localStorage.setItem(TOKEN_EXPIRY_KEY, expiryTime.toString())
+}
+
+// Clear token (logout)
+export function clearGoogleToken(): void {
+  localStorage.removeItem(TOKEN_KEY)
+  localStorage.removeItem(TOKEN_EXPIRY_KEY)
+}
+
+// Generate Google OAuth URL
+export function getGoogleAuthUrl(): string {
+  const params = new URLSearchParams({
+    client_id: CLIENT_ID,
+    redirect_uri: REDIRECT_URI,
+    response_type: 'token',
+    scope: SCOPES,
+    include_granted_scopes: 'true',
+    state: 'google-calendar-auth'
   })
   
-  events.push({
-    id: 'cal-3',
-    title: 'Lunch Break',
-    startTime: `${date}T12:00:00`,
-    endTime: `${date}T13:00:00`,
-    isRecurring: true,
-    recurrenceRule: 'FREQ=DAILY'
-  })
+  return `https://accounts.google.com/o/oauth2/v2/auth?${params.toString()}`
+}
+
+// Handle OAuth callback (extract token from URL hash)
+export function handleOAuthCallback(): GoogleToken | null {
+  const hash = window.location.hash
+  if (!hash) return null
   
-  if (!isWeekend) {
-    events.push({
-      id: 'cal-4',
-      title: 'Team Sync',
-      startTime: `${date}T14:00:00`,
-      endTime: `${date}T15:00:00`,
-      isRecurring: true,
-      recurrenceRule: 'FREQ=WEEKLY;BYDAY=WE'
-    })
+  const params = new URLSearchParams(hash.substring(1))
+  const accessToken = params.get('access_token')
+  const expiresIn = params.get('expires_in')
+  const tokenType = params.get('token_type')
+  const scope = params.get('scope')
+  const state = params.get('state')
+  
+  // Verify state to prevent CSRF
+  if (state !== 'google-calendar-auth') {
+    console.error('Invalid state parameter')
+    return null
   }
   
-  return events.sort((a, b) => 
-    new Date(a.startTime).getTime() - new Date(b.startTime).getTime()
+  if (accessToken && expiresIn && tokenType) {
+    const token: GoogleToken = {
+      access_token: accessToken,
+      token_type: tokenType,
+      expires_in: parseInt(expiresIn),
+      scope: scope || ''
+    }
+    
+    saveGoogleToken(token)
+    
+    // Clear the URL hash
+    window.history.replaceState({}, document.title, window.location.pathname + window.location.search)
+    
+    return token
+  }
+  
+  return null
+}
+
+// Refresh token if needed (Google tokens can't be refreshed without refresh token, so we just check)
+export async function ensureValidToken(): Promise<string | null> {
+  if (!isGoogleAuthenticated()) {
+    return null
+  }
+  
+  const token = getGoogleToken()
+  return token?.access_token || null
+}
+
+// Fetch calendars list
+export async function fetchCalendars(): Promise<Array<{ id: string; summary: string; primary?: boolean }>> {
+  const token = await ensureValidToken()
+  if (!token) throw new Error('Not authenticated')
+  
+  const response = await fetch('https://www.googleapis.com/calendar/v3/users/me/calendarList', {
+    headers: {
+      'Authorization': `Bearer ${token}`,
+      'Accept': 'application/json'
+    }
+  })
+  
+  if (!response.ok) {
+    if (response.status === 401) {
+      clearGoogleToken()
+      throw new Error('Session expired. Please reconnect.')
+    }
+    throw new Error(`Failed to fetch calendars: ${response.status}`)
+  }
+  
+  const data = await response.json()
+  return data.items.map((cal: any) => ({
+    id: cal.id,
+    summary: cal.summary,
+    primary: cal.primary
+  }))
+}
+
+// Fetch events from a calendar
+export async function fetchCalendarEvents(
+  calendarId: string = 'primary',
+  timeMin?: string,
+  timeMax?: string,
+  maxResults: number = 50
+): Promise<CalendarEvent[]> {
+  const token = await ensureValidToken()
+  if (!token) throw new Error('Not authenticated')
+  
+  const now = new Date()
+  const params = new URLSearchParams({
+    maxResults: maxResults.toString(),
+    orderBy: 'startTime',
+    singleEvents: 'true',
+    timeMin: timeMin || now.toISOString()
+  })
+  
+  if (timeMax) {
+    params.append('timeMax', timeMax)
+  }
+  
+  const response = await fetch(
+    `https://www.googleapis.com/calendar/v3/calendars/${encodeURIComponent(calendarId)}/events?${params}`,
+    {
+      headers: {
+        'Authorization': `Bearer ${token}`,
+        'Accept': 'application/json'
+      }
+    }
   )
+  
+  if (!response.ok) {
+    if (response.status === 401) {
+      clearGoogleToken()
+      throw new Error('Session expired. Please reconnect.')
+    }
+    throw new Error(`Failed to fetch events: ${response.status}`)
+  }
+  
+  const data = await response.json()
+  
+  return data.items.map((event: any): CalendarEvent => ({
+    id: event.id,
+    title: event.summary || 'Untitled Event',
+    description: event.description,
+    startTime: event.start.dateTime || event.start.date,
+    endTime: event.end.dateTime || event.end.date,
+    location: event.location,
+    isRecurring: !!event.recurringEventId
+  }))
+}
+
+// Fetch today's events from primary calendar
+export async function fetchTodaysEvents(): Promise<CalendarEvent[]> {
+  const today = new Date()
+  today.setHours(0, 0, 0, 0)
+  
+  const tomorrow = new Date(today)
+  tomorrow.setDate(tomorrow.getDate() + 1)
+  
+  return fetchCalendarEvents('primary', today.toISOString(), tomorrow.toISOString())
+}
+
+// Fetch upcoming events (next 7 days)
+export async function fetchUpcomingEvents(days: number = 7): Promise<CalendarEvent[]> {
+  const now = new Date()
+  
+  const future = new Date(now)
+  future.setDate(future.getDate() + days)
+  
+  return fetchCalendarEvents('primary', now.toISOString(), future.toISOString(), 100)
 }
 
 // Convert calendar event to task
 export function eventToTask(event: CalendarEvent): Omit<Task, 'id' | 'createdAt' | 'status'> {
+  const startTime = new Date(event.startTime)
+  const endTime = new Date(event.endTime)
+  const durationMinutes = Math.round((endTime.getTime() - startTime.getTime()) / (1000 * 60))
+  
   return {
     title: `📅 ${event.title}`,
-    description: event.description || `Calendar event at ${formatTime(event.startTime)}`,
+    description: event.description || `Calendar event${event.location ? ` at ${event.location}` : ''}`,
     priority: 'medium',
     dueDate: event.startTime.split('T')[0],
     tags: ['calendar', 'meeting'],
-    estimatedMinutes: getDurationMinutes(event.startTime, event.endTime)
+    estimatedMinutes: durationMinutes > 0 ? durationMinutes : undefined
   }
-}
-
-// Get today's calendar events
-export function getTodaysCalendarEvents(): CalendarEvent[] {
-  const today = new Date().toISOString().split('T')[0]
-  return getMockCalendarEvents(today)
-}
-
-// Get upcoming events (next 7 days)
-export function getUpcomingEvents(): CalendarEvent[] {
-  const events: CalendarEvent[] = []
-  for (let i = 0; i < 7; i++) {
-    const date = new Date()
-    date.setDate(date.getDate() + i)
-    const dateStr = date.toISOString().split('T')[0]
-    events.push(...getMockCalendarEvents(dateStr))
-  }
-  return events
-}
-
-// Sync calendar events to tasks
-export function syncCalendarToTasks(): Task[] {
-  const events = getTodaysCalendarEvents()
-  const newTasks: Task[] = []
-  
-  events.forEach(event => {
-    // Check if task already exists for this event
-    const existing = getExistingTaskForEvent(event.id)
-    if (!existing) {
-      const task = createTask(eventToTask(event))
-      newTasks.push(task)
-    }
-  })
-  
-  return newTasks
-}
-
-// Check if task exists for calendar event
-function getExistingTaskForEvent(eventId: string): boolean {
-  const tasks = JSON.parse(localStorage.getItem('mac-tasks') || '[]')
-  return tasks.some((t: Task) => t.tags.includes(`event-${eventId}`))
-}
-
-// Format time for display
-function formatTime(isoString: string): string {
-  const date = new Date(isoString)
-  return date.toLocaleTimeString('en-US', { hour: 'numeric', minute: '2-digit' })
-}
-
-// Calculate duration in minutes
-function getDurationMinutes(start: string, end: string): number {
-  const startDate = new Date(start)
-  const endDate = new Date(end)
-  return Math.round((endDate.getTime() - startDate.getTime()) / (1000 * 60))
 }
 
 // Get time until event
@@ -169,7 +244,12 @@ export function getTimeUntilEvent(event: CalendarEvent): string {
   const eventTime = new Date(event.startTime)
   const diffMs = eventTime.getTime() - now.getTime()
   
-  if (diffMs < 0) return 'In progress'
+  if (diffMs < 0) {
+    // Event already started
+    const endTime = new Date(event.endTime)
+    if (now < endTime) return 'In progress'
+    return 'Ended'
+  }
   
   const diffMins = Math.floor(diffMs / (1000 * 60))
   const diffHours = Math.floor(diffMins / 60)
@@ -177,11 +257,16 @@ export function getTimeUntilEvent(event: CalendarEvent): string {
   
   if (diffDays > 0) return `in ${diffDays} day${diffDays > 1 ? 's' : ''}`
   if (diffHours > 0) return `in ${diffHours} hour${diffHours > 1 ? 's' : ''}`
-  return `in ${diffMins} min`
+  if (diffMins > 0) return `in ${diffMins} min`
+  return 'Now'
 }
 
-// Get Google Calendar auth URL (for real implementation)
-export function getGoogleAuthUrl(): string {
-  const redirectUri = typeof window !== 'undefined' ? window.location.origin : ''
-  return `https://accounts.google.com/o/oauth2/v2/auth?client_id=${CLIENT_ID}&redirect_uri=${redirectUri}&response_type=token&scope=${encodeURIComponent(SCOPES)}`
+// Format time for display
+export function formatEventTime(isoString: string): string {
+  const date = new Date(isoString)
+  return date.toLocaleTimeString('en-US', { 
+    hour: 'numeric', 
+    minute: '2-digit',
+    hour12: true 
+  })
 }
