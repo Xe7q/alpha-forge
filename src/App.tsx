@@ -37,9 +37,16 @@ import { getPendingReminders, generateDailySummary, getFocusNotification } from 
 import { 
   isGoogleAuthenticated, getGoogleAuthUrl, handleOAuthCallback,
   fetchTodaysEvents, fetchUpcomingEvents, fetchCalendars,
-  eventToTask, CalendarEvent, getTimeUntilEvent, formatEventTime,
+  eventToTask as googleEventToTask, CalendarEvent as GoogleCalendarEvent,
+  getTimeUntilEvent as getGoogleTimeUntilEvent, formatEventTime as formatGoogleEventTime,
   clearGoogleToken
 } from './services/calendarSync'
+import {
+  fetchICalFromUrl, getTodaysEvents as getTodaysICalEvents, getUpcomingEvents as getUpcomingICalEvents,
+  iCalEventToTask, getTimeUntilEvent as getICalTimeUntilEvent, formatEventTime as formatICalEventTime,
+  saveICalUrl, getICalUrl, clearICalData, saveICalEvents, getStoredICalEvents, shouldRefreshICal,
+  ICalEvent
+} from './services/iCalParser'
 
 // Types
 interface Position {
@@ -372,12 +379,19 @@ export default function App() {
   const [showCalendarModal, setShowCalendarModal] = useState(false)
   const [taskFilter, setTaskFilter] = useState<'all' | 'today' | 'overdue' | 'done'>('today')
   const [recurringTemplates, setRecurringTemplates] = useState<RecurringTaskTemplate[]>(getRecurringTemplates())
-  const [calendarEvents, setCalendarEvents] = useState<CalendarEvent[]>([])
+  const [calendarEvents, setCalendarEvents] = useState<GoogleCalendarEvent[]>([])
+  const [iCalEvents, setICalEvents] = useState<ICalEvent[]>([])
   const [googleAuthed, setGoogleAuthed] = useState(false)
   const [calendars, setCalendars] = useState<Array<{ id: string; summary: string; primary?: boolean }>>([])
   const [calendarLoading, setCalendarLoading] = useState(false)
+  const [iCalUrl, setICalUrl] = useState(getICalUrl() || '')
+  const [calendarSource, setCalendarSource] = useState<'none' | 'google' | 'ical'>(() => {
+    if (isGoogleAuthenticated()) return 'google'
+    if (getICalUrl()) return 'ical'
+    return 'none'
+  })
   
-  // Initialize recurring tasks and check Google auth on mount
+  // Initialize recurring tasks and check calendar auth on mount
   useEffect(() => {
     initializeRecurringTasks()
     // Generate recurring tasks for today
@@ -386,21 +400,24 @@ export default function App() {
       setTasks(prev => [...prev, ...newRecurring])
     }
     
-    // Check for OAuth callback
+    // Check for OAuth callback (Google)
     const token = handleOAuthCallback()
     if (token) {
       setGoogleAuthed(true)
-      loadCalendarData()
-    } else {
-      setGoogleAuthed(isGoogleAuthenticated())
-      if (isGoogleAuthenticated()) {
-        loadCalendarData()
-      }
+      setCalendarSource('google')
+      loadGoogleCalendarData()
+    } else if (isGoogleAuthenticated()) {
+      setGoogleAuthed(true)
+      setCalendarSource('google')
+      loadGoogleCalendarData()
+    } else if (getICalUrl()) {
+      setCalendarSource('ical')
+      loadICalData()
     }
   }, [])
   
-  // Load calendar data
-  const loadCalendarData = async () => {
+  // Load Google Calendar data
+  const loadGoogleCalendarData = async () => {
     setCalendarLoading(true)
     try {
       const events = await fetchTodaysEvents()
@@ -408,7 +425,36 @@ export default function App() {
       const cals = await fetchCalendars()
       setCalendars(cals)
     } catch (error) {
-      console.error('Failed to load calendar:', error)
+      console.error('Failed to load Google calendar:', error)
+    }
+    setCalendarLoading(false)
+  }
+  
+  // Load iCal data
+  const loadICalData = async () => {
+    const url = getICalUrl()
+    if (!url) return
+    
+    setCalendarLoading(true)
+    try {
+      // Use cached data if fresh
+      if (!shouldRefreshICal()) {
+        const cached = getStoredICalEvents()
+        setICalEvents(cached)
+        setCalendarLoading(false)
+        return
+      }
+      
+      const events = await fetchICalFromUrl(url)
+      saveICalEvents(events)
+      setICalEvents(events)
+    } catch (error) {
+      console.error('Failed to load iCal:', error)
+      // Fall back to cached data
+      const cached = getStoredICalEvents()
+      if (cached.length > 0) {
+        setICalEvents(cached)
+      }
     }
     setCalendarLoading(false)
   }
@@ -424,6 +470,23 @@ export default function App() {
     setGoogleAuthed(false)
     setCalendarEvents([])
     setCalendars([])
+    setCalendarSource('none')
+  }
+  
+  // Connect iCal URL
+  const connectICal = async (url: string) => {
+    setICalUrl(url)
+    saveICalUrl(url)
+    setCalendarSource('ical')
+    await loadICalData()
+  }
+  
+  // Disconnect iCal
+  const disconnectICal = () => {
+    clearICalData()
+    setICalUrl('')
+    setICalEvents([])
+    setCalendarSource('none')
   }
   
   // Save tasks to localStorage
@@ -1459,16 +1522,16 @@ export default function App() {
                   <Card>
                     <div className="flex items-center justify-between mb-4">
                       <h3 className="text-lg font-bold">📅 Today's Schedule</h3>
-                      {!googleAuthed ? (
+                      {calendarSource === 'none' ? (
                         <button
-                          onClick={connectGoogleCalendar}
+                          onClick={() => setShowCalendarModal(true)}
                           className="text-sm bg-hf-blue hover:bg-blue-600 px-3 py-1 rounded"
                         >
-                          Connect Google Calendar
+                          Connect Calendar
                         </button>
                       ) : (
                         <button
-                          onClick={loadCalendarData}
+                          onClick={() => calendarSource === 'google' ? loadGoogleCalendarData() : loadICalData()}
                           disabled={calendarLoading}
                           className="text-sm text-hf-blue hover:text-white disabled:opacity-50"
                         >
@@ -1477,54 +1540,93 @@ export default function App() {
                       )}
                     </div>
                     
-                    {!googleAuthed ? (
+                    {calendarSource === 'none' ? (
                       <div className="text-center py-8">
                         <p className="text-4xl mb-2">📅</p>
-                        <p className="text-gray-400 mb-4">Connect your Google Calendar to see today's events</p>
+                        <p className="text-gray-400 mb-4">Connect your calendar to see today's events</p>
                         <button
-                          onClick={connectGoogleCalendar}
+                          onClick={() => setShowCalendarModal(true)}
                           className="bg-hf-blue hover:bg-blue-600 px-6 py-2 rounded-lg font-medium"
                         >
-                          Connect Google Calendar
+                          Connect Calendar
                         </button>
                       </div>
                     ) : calendarLoading ? (
                       <div className="text-center py-8 text-gray-400">
                         <p>Loading your calendar...</p>
                       </div>
-                    ) : calendarEvents.length === 0 ? (
-                      <p className="text-gray-400 text-center py-4">No events scheduled for today. Enjoy your free time! 🎉</p>
+                    ) : calendarSource === 'google' ? (
+                      // Google Calendar events
+                      calendarEvents.length === 0 ? (
+                        <p className="text-gray-400 text-center py-4">No events scheduled for today. Enjoy your free time! 🎉</p>
+                      ) : (
+                        <div className="space-y-2">
+                          {calendarEvents.map((event) => (
+                            <div key={event.id} className="flex items-center gap-4 p-3 bg-hf-dark rounded-lg">
+                              <div className="text-center min-w-[70px]">
+                                <p className="text-sm font-bold">
+                                  {formatGoogleEventTime(event.startTime)}
+                                </p>
+                                <p className="text-xs text-gray-500">{getGoogleTimeUntilEvent(event)}</p>
+                              </div>
+                              <div className="flex-1 min-w-0">
+                                <p className="font-medium truncate">{event.title}</p>
+                                {event.location && (
+                                  <p className="text-xs text-gray-400 truncate">📍 {event.location}</p>
+                                )}
+                                {event.isRecurring && (
+                                  <span className="text-xs text-hf-blue">🔄 Recurring</span>
+                                )}
+                              </div>
+                              <button
+                                onClick={() => {
+                                  const task = createTask(googleEventToTask(event))
+                                  setTasks([...tasks, task])
+                                }}
+                                className="text-xs bg-hf-border/50 hover:bg-hf-blue px-3 py-1 rounded whitespace-nowrap"
+                              >
+                                + Task
+                              </button>
+                            </div>
+                          ))}
+                        </div>
+                      )
                     ) : (
-                      <div className="space-y-2">
-                        {calendarEvents.map((event) => (
-                          <div key={event.id} className="flex items-center gap-4 p-3 bg-hf-dark rounded-lg">
-                            <div className="text-center min-w-[70px]">
-                              <p className="text-sm font-bold">
-                                {formatEventTime(event.startTime)}
-                              </p>
-                              <p className="text-xs text-gray-500">{getTimeUntilEvent(event)}</p>
+                      // iCal events
+                      getTodaysICalEvents(iCalEvents).length === 0 ? (
+                        <p className="text-gray-400 text-center py-4">No events scheduled for today. Enjoy your free time! 🎉</p>
+                      ) : (
+                        <div className="space-y-2">
+                          {getTodaysICalEvents(iCalEvents).map((event) => (
+                            <div key={event.uid} className="flex items-center gap-4 p-3 bg-hf-dark rounded-lg">
+                              <div className="text-center min-w-[70px]">
+                                <p className="text-sm font-bold">
+                                  {formatICalEventTime(event.startTime)}
+                                </p>
+                                <p className="text-xs text-gray-500">{getICalTimeUntilEvent(event)}</p>
+                              </div>
+                              <div className="flex-1 min-w-0">
+                                <p className="font-medium truncate">{event.summary}</p>
+                                {event.location && (
+                                  <p className="text-xs text-gray-400 truncate">📍 {event.location}</p>
+                                )}
+                                {event.isRecurring && (
+                                  <span className="text-xs text-hf-blue">🔄 Recurring</span>
+                                )}
+                              </div>
+                              <button
+                                onClick={() => {
+                                  const task = createTask(iCalEventToTask(event))
+                                  setTasks([...tasks, task])
+                                }}
+                                className="text-xs bg-hf-border/50 hover:bg-hf-blue px-3 py-1 rounded whitespace-nowrap"
+                              >
+                                + Task
+                              </button>
                             </div>
-                            <div className="flex-1 min-w-0">
-                              <p className="font-medium truncate">{event.title}</p>
-                              {event.location && (
-                                <p className="text-xs text-gray-400 truncate">📍 {event.location}</p>
-                              )}
-                              {event.isRecurring && (
-                                <span className="text-xs text-hf-blue">🔄 Recurring</span>
-                              )}
-                            </div>
-                            <button
-                              onClick={() => {
-                                const task = createTask(eventToTask(event))
-                                setTasks([...tasks, task])
-                              }}
-                              className="text-xs bg-hf-border/50 hover:bg-hf-blue px-3 py-1 rounded whitespace-nowrap"
-                            >
-                              + Task
-                            </button>
-                          </div>
-                        ))}
-                      </div>
+                          ))}
+                        </div>
+                      )
                     )}
                   </Card>
                   
@@ -2759,26 +2861,64 @@ BTC,Bitcoin,0.5,42000,Crypto,crypto`}
           <Card className="w-full max-w-lg">
             <h3 className="text-lg font-bold mb-4">📅 Calendar Integration</h3>
             
-            {!googleAuthed ? (
+            {calendarSource === 'none' ? (
               <>
-                <p className="text-sm text-gray-400 mb-6">Connect your Google Calendar to sync events</p>
-                <div className="text-center py-8">
-                  <div className="w-16 h-16 bg-hf-blue/20 rounded-full flex items-center justify-center mx-auto mb-4">
-                    <span className="text-3xl">📅</span>
+                <p className="text-sm text-gray-400 mb-4">Choose how to connect your calendar</p>
+                
+                {/* iCal URL Option */}
+                <div className="bg-hf-dark rounded-lg p-4 mb-4">
+                  <p className="font-medium mb-2">📎 iCal URL (Recommended)</p>
+                  <p className="text-sm text-gray-400 mb-3">Paste your Google Calendar's secret iCal URL</p>
+                  <div className="flex gap-2">
+                    <input
+                      type="url"
+                      value={iCalUrl}
+                      onChange={(e) => setICalUrl(e.target.value)}
+                      placeholder="https://calendar.google.com/calendar/ical/..."
+                      className="flex-1 bg-hf-border/50 border border-hf-border rounded-lg p-2 text-sm"
+                    />
+                    <button
+                      onClick={() => {
+                        if (iCalUrl.includes('.ics')) {
+                          connectICal(iCalUrl)
+                          setShowCalendarModal(false)
+                        } else {
+                          alert('Please enter a valid iCal URL (ends with .ics)')
+                        }
+                      }}
+                      disabled={!iCalUrl}
+                      className="bg-hf-green hover:bg-green-600 text-black px-4 py-2 rounded-lg font-medium disabled:opacity-50"
+                    >
+                      Connect
+                    </button>
                   </div>
-                  <p className="text-gray-400 mb-4">Connect your Google Calendar to:</p>
-                  <ul className="text-sm text-gray-500 text-left max-w-xs mx-auto mb-6 space-y-1">
-                    <li>✓ See today's events in Command Center</li>
-                    <li>✓ Convert events to tasks</li>
-                    <li>✓ Get notified before meetings</li>
-                  </ul>
+                  <p className="text-xs text-gray-500 mt-2">
+                    Find it in Google Calendar → Settings → Integrate calendar → Secret address
+                  </p>
+                </div>
+                
+                {/* Divider */}
+                <div className="flex items-center gap-4 my-4">
+                  <div className="flex-1 h-px bg-hf-border"></div>
+                  <span className="text-sm text-gray-500">OR</span>
+                  <div className="flex-1 h-px bg-hf-border"></div>
+                </div>
+                
+                {/* Google OAuth Option */}
+                <div className="bg-hf-dark rounded-lg p-4">
+                  <p className="font-medium mb-2">🔐 Google Sign-In</p>
+                  <p className="text-sm text-gray-400 mb-3">Connect directly with your Google account</p>
                   <button 
                     onClick={connectGoogleCalendar}
-                    className="bg-hf-blue hover:bg-blue-600 px-6 py-3 rounded-lg font-medium"
+                    className="w-full bg-hf-blue hover:bg-blue-600 px-4 py-2 rounded-lg font-medium"
                   >
                     Connect Google Calendar
                   </button>
+                  <p className="text-xs text-gray-500 mt-2">
+                    Requires app verification (may show "unverified app" warning)
+                  </p>
                 </div>
+                
                 <div className="flex justify-center mt-4">
                   <button 
                     onClick={() => setShowCalendarModal(false)} 
@@ -2788,7 +2928,7 @@ BTC,Bitcoin,0.5,42000,Crypto,crypto`}
                   </button>
                 </div>
               </>
-            ) : (
+            ) : calendarSource === 'google' ? (
               <>
                 <div className="flex items-center justify-between mb-4">
                   <p className="text-sm text-green-400">✓ Connected to Google Calendar</p>
@@ -2825,7 +2965,7 @@ BTC,Bitcoin,0.5,42000,Crypto,crypto`}
                       onClick={async () => {
                         try {
                           const events = await fetchUpcomingEvents(7)
-                          const newTasks = events.map(eventToTask).map(createTask)
+                          const newTasks = events.map(googleEventToTask).map(createTask)
                           setTasks([...tasks, ...newTasks])
                           setShowCalendarModal(false)
                         } catch (error) {
@@ -2841,7 +2981,7 @@ BTC,Bitcoin,0.5,42000,Crypto,crypto`}
                       onClick={async () => {
                         try {
                           const events = await fetchTodaysEvents()
-                          const newTasks = events.map(eventToTask).map(createTask)
+                          const newTasks = events.map(googleEventToTask).map(createTask)
                           setTasks([...tasks, ...newTasks])
                           setShowCalendarModal(false)
                         } catch (error) {
@@ -2864,7 +3004,71 @@ BTC,Bitcoin,0.5,42000,Crypto,crypto`}
                     Close
                   </button>
                   <button 
-                    onClick={loadCalendarData}
+                    onClick={loadGoogleCalendarData}
+                    disabled={calendarLoading}
+                    className="flex-1 py-2 bg-hf-blue hover:bg-blue-600 rounded-lg font-medium disabled:opacity-50"
+                  >
+                    {calendarLoading ? 'Refreshing...' : 'Refresh'}
+                  </button>
+                </div>
+              </>
+            ) : (
+              // iCal Connected
+              <>
+                <div className="flex items-center justify-between mb-4">
+                  <p className="text-sm text-green-400">✓ Connected via iCal URL</p>
+                  <button 
+                    onClick={disconnectICal}
+                    className="text-xs text-hf-red hover:text-red-400"
+                  >
+                    Disconnect
+                  </button>
+                </div>
+                
+                <div className="bg-hf-dark rounded-lg p-3 mb-6">
+                  <p className="text-xs text-gray-500 mb-1">Connected URL:</p>
+                  <p className="text-sm truncate">{iCalUrl}</p>
+                </div>
+                
+                <div className="border-t border-hf-border pt-4">
+                  <p className="text-sm font-medium mb-3">Quick Actions</p>
+                  <div className="grid grid-cols-2 gap-3">
+                    <button
+                      onClick={() => {
+                        const events = getUpcomingICalEvents(iCalEvents, 7)
+                        const newTasks = events.map(iCalEventToTask).map(createTask)
+                        setTasks([...tasks, ...newTasks])
+                        setShowCalendarModal(false)
+                      }}
+                      className="p-3 bg-hf-dark rounded-lg hover:bg-hf-border text-left"
+                    >
+                      <p className="font-medium text-sm">Sync Next 7 Days</p>
+                      <p className="text-xs text-gray-500">Import all events as tasks</p>
+                    </button>
+                    <button
+                      onClick={() => {
+                        const events = getTodaysICalEvents(iCalEvents)
+                        const newTasks = events.map(iCalEventToTask).map(createTask)
+                        setTasks([...tasks, ...newTasks])
+                        setShowCalendarModal(false)
+                      }}
+                      className="p-3 bg-hf-dark rounded-lg hover:bg-hf-border text-left"
+                    >
+                      <p className="font-medium text-sm">Sync Today Only</p>
+                      <p className="text-xs text-gray-500">Import today's events</p>
+                    </button>
+                  </div>
+                </div>
+                
+                <div className="flex gap-3 mt-6">
+                  <button 
+                    onClick={() => setShowCalendarModal(false)} 
+                    className="flex-1 py-2 border border-hf-border rounded-lg hover:bg-hf-border"
+                  >
+                    Close
+                  </button>
+                  <button 
+                    onClick={loadICalData}
                     disabled={calendarLoading}
                     className="flex-1 py-2 bg-hf-blue hover:bg-blue-600 rounded-lg font-medium disabled:opacity-50"
                   >
