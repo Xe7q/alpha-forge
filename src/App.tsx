@@ -639,32 +639,128 @@ export default function App() {
       <nav className="border-b border-hf-border">
         <div className="max-w-7xl mx-auto px-6">
           <div className="flex gap-6">
-            {[
-              { id: 'overview', label: 'Overview', icon: PieChart },
-              { id: 'positions', label: 'Positions', icon: Wallet },
-              { id: 'command', label: 'Command Center', icon: Zap },
-              { id: 'analysis', label: 'Analysis', icon: Activity },
-              { id: 'performance', label: 'Performance', icon: BarChart3 },
-              { id: 'tax', label: 'Tax Center', icon: Shield },
-              { id: 'ai', label: 'AI Advisor', icon: Zap },
-              { id: 'dividends', label: 'Dividends', icon: Wallet },
-              { id: 'earnings', label: 'Earnings', icon: Activity },
-              { id: 'import', label: 'Import/Export', icon: Globe },
-              { id: 'news', label: 'News', icon: Globe },
-            ].map(({ id, label, icon: Icon }) => (
+            {/* Main Tabs */}
+            <button
+              onClick={() => setActiveTab('overview')}
+              className={`flex items-center gap-2 py-4 border-b-2 transition-colors ${
+                activeTab === 'overview' 
+                  ? 'border-hf-blue text-hf-blue' 
+                  : 'border-transparent text-gray-400 hover:text-white'
+              }`}
+            >
+              <PieChart size={18} />
+              <span className="font-medium">Overview</span>
+            </button>
+            
+            <button
+              onClick={() => setActiveTab('command')}
+              className={`flex items-center gap-2 py-4 border-b-2 transition-colors ${
+                activeTab === 'command' 
+                  ? 'border-hf-gold text-hf-gold' 
+                  : 'border-transparent text-gray-400 hover:text-white'
+              }`}
+            >
+              <Zap size={18} />
+              <span className="font-medium">Command Center</span>
+            </button>
+            
+            {/* Financial Tools Dropdown */}
+            <div className="relative group">
               <button
-                key={id}
-                onClick={() => setActiveTab(id as any)}
                 className={`flex items-center gap-2 py-4 border-b-2 transition-colors ${
-                  activeTab === id 
-                    ? 'border-hf-blue text-hf-blue' 
+                  ['positions', 'analysis', 'performance', 'tax', 'ai', 'dividends', 'earnings', 'import'].includes(activeTab)
+                    ? 'border-hf-green text-hf-green' 
                     : 'border-transparent text-gray-400 hover:text-white'
                 }`}
               >
-                <Icon size={18} />
-                <span className="font-medium">{label}</span>
+                <Wallet size={18} />
+                <span className="font-medium">Financial Tools</span>
+                <svg className="w-4 h-4 ml-1" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 9l-7 7-7-7" />
+                </svg>
               </button>
-            ))}
+              
+              {/* Dropdown Menu */}
+              <div className="absolute top-full left-0 mt-0 w-56 bg-hf-card border border-hf-border rounded-lg shadow-xl opacity-0 invisible group-hover:opacity-100 group-hover:visible transition-all z-50">
+                <div className="py-2">
+                  <p className="px-4 py-2 text-xs text-gray-500 uppercase tracking-wider">Portfolio</p>
+                  <button
+                    onClick={() => setActiveTab('positions')}
+                    className={`w-full text-left px-4 py-2 hover:bg-hf-border/50 flex items-center gap-3 ${activeTab === 'positions' ? 'text-hf-green bg-hf-green/10' : 'text-gray-300'}`}
+                  >
+                    <Wallet size={16} />
+                    Positions
+                  </button>
+                  <button
+                    onClick={() => setActiveTab('analysis')}
+                    className={`w-full text-left px-4 py-2 hover:bg-hf-border/50 flex items-center gap-3 ${activeTab === 'analysis' ? 'text-hf-green bg-hf-green/10' : 'text-gray-300'}`}
+                  >
+                    <Activity size={16} />
+                    Analysis
+                  </button>
+                  <button
+                    onClick={() => setActiveTab('performance')}
+                    className={`w-full text-left px-4 py-2 hover:bg-hf-border/50 flex items-center gap-3 ${activeTab === 'performance' ? 'text-hf-green bg-hf-green/10' : 'text-gray-300'}`}
+                  >
+                    <BarChart3 size={16} />
+                    Performance
+                  </button>
+                  
+                  <div className="border-t border-hf-border my-2"></div>
+                  <p className="px-4 py-2 text-xs text-gray-500 uppercase tracking-wider">Insights</p>
+                  <button
+                    onClick={() => setActiveTab('dividends')}
+                    className={`w-full text-left px-4 py-2 hover:bg-hf-border/50 flex items-center gap-3 ${activeTab === 'dividends' ? 'text-hf-green bg-hf-green/10' : 'text-gray-300'}`}
+                  >
+                    <span className="text-sm">💰</span>
+                    Dividends
+                  </button>
+                  <button
+                    onClick={() => setActiveTab('earnings')}
+                    className={`w-full text-left px-4 py-2 hover:bg-hf-border/50 flex items-center gap-3 ${activeTab === 'earnings' ? 'text-hf-green bg-hf-green/10' : 'text-gray-300'}`}
+                  >
+                    <span className="text-sm">📊</span>
+                    Earnings
+                  </button>
+                  <button
+                    onClick={() => setActiveTab('tax')}
+                    className={`w-full text-left px-4 py-2 hover:bg-hf-border/50 flex items-center gap-3 ${activeTab === 'tax' ? 'text-hf-green bg-hf-green/10' : 'text-gray-300'}`}
+                  >
+                    <Shield size={16} />
+                    Tax Center
+                  </button>
+                  <button
+                    onClick={() => setActiveTab('ai')}
+                    className={`w-full text-left px-4 py-2 hover:bg-hf-border/50 flex items-center gap-3 ${activeTab === 'ai' ? 'text-hf-green bg-hf-green/10' : 'text-gray-300'}`}
+                  >
+                    <Zap size={16} />
+                    AI Advisor
+                  </button>
+                  
+                  <div className="border-t border-hf-border my-2"></div>
+                  <p className="px-4 py-2 text-xs text-gray-500 uppercase tracking-wider">Data</p>
+                  <button
+                    onClick={() => setActiveTab('import')}
+                    className={`w-full text-left px-4 py-2 hover:bg-hf-border/50 flex items-center gap-3 ${activeTab === 'import' ? 'text-hf-green bg-hf-green/10' : 'text-gray-300'}`}
+                  >
+                    <Globe size={16} />
+                    Import / Export
+                  </button>
+                </div>
+              </div>
+            </div>
+            
+            <button
+              onClick={() => setActiveTab('news')}
+              className={`flex items-center gap-2 py-4 border-b-2 transition-colors ${
+                activeTab === 'news' 
+                  ? 'border-hf-blue text-hf-blue' 
+                  : 'border-transparent text-gray-400 hover:text-white'
+              }`}
+            >
+              <Globe size={18} />
+              <span className="font-medium">News</span>
+            </button>
           </div>
         </div>
       </nav>
