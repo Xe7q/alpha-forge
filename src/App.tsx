@@ -28,9 +28,17 @@ import { downloadCsv, importFromCsv, downloadTemplate, CsvPosition } from './ser
 import { 
   Task, createTask, updateTaskStatus, getTasks, saveTasks, 
   getTodaysTasks, getOverdueTasks, sortByPriority, getCompletionStats,
-  getSuggestedFocusTask, suggestTimeBlocks
+  getSuggestedFocusTask, suggestTimeBlocks,
+  RecurringTaskTemplate, getRecurringTemplates, saveRecurringTemplate, 
+  deleteRecurringTemplate, generateRecurringTasksForToday, initializeRecurringTasks,
+  completeRecurringTask
 } from './services/taskManager'
 import { getPendingReminders, generateDailySummary, getFocusNotification } from './services/notifications'
+import { 
+  getTodaysCalendarEvents, getUpcomingEvents, syncCalendarToTasks,
+  CalendarEvent, getConnectedCalendars, saveConnectedCalendars,
+  getTimeUntilEvent, SyncedCalendar
+} from './services/calendarSync'
 
 // Types
 interface Position {
@@ -359,7 +367,24 @@ export default function App() {
     }
   })
   const [showTaskModal, setShowTaskModal] = useState(false)
+  const [showRecurringModal, setShowRecurringModal] = useState(false)
+  const [showCalendarModal, setShowCalendarModal] = useState(false)
   const [taskFilter, setTaskFilter] = useState<'all' | 'today' | 'overdue' | 'done'>('today')
+  const [recurringTemplates, setRecurringTemplates] = useState<RecurringTaskTemplate[]>(getRecurringTemplates())
+  const [connectedCalendars, setConnectedCalendars] = useState<SyncedCalendar[]>(getConnectedCalendars())
+  const [calendarEvents, setCalendarEvents] = useState<CalendarEvent[]>([])
+  
+  // Initialize recurring tasks on mount
+  useEffect(() => {
+    initializeRecurringTasks()
+    // Generate recurring tasks for today
+    const newRecurring = generateRecurringTasksForToday()
+    if (newRecurring.length > 0) {
+      setTasks(prev => [...prev, ...newRecurring])
+    }
+    // Load calendar events
+    setCalendarEvents(getTodaysCalendarEvents())
+  }, [])
   
   // Save tasks to localStorage
   useEffect(() => {
@@ -1326,15 +1351,29 @@ export default function App() {
             <div className="flex items-center justify-between">
               <div>
                 <h2 className="text-xl font-bold">🎯 Mac's Command Center</h2>
-                <p className="text-sm text-gray-400 mt-1">Tasks, Focus & Daily Planning</p>
+                <p className="text-sm text-gray-400 mt-1">Tasks, Calendar & Daily Planning</p>
               </div>
-              <button
-                onClick={() => setShowTaskModal(true)}
-                className="flex items-center gap-2 bg-hf-blue hover:bg-blue-600 px-4 py-2 rounded-lg font-medium"
-              >
-                <Plus size={18} />
-                Add Task
-              </button>
+              <div className="flex items-center gap-2">
+                <button
+                  onClick={() => setShowCalendarModal(true)}
+                  className="flex items-center gap-2 bg-hf-card border border-hf-border hover:border-hf-blue px-4 py-2 rounded-lg font-medium"
+                >
+                  📅 Calendar
+                </button>
+                <button
+                  onClick={() => setShowRecurringModal(true)}
+                  className="flex items-center gap-2 bg-hf-card border border-hf-border hover:border-hf-blue px-4 py-2 rounded-lg font-medium"
+                >
+                  🔄 Recurring
+                </button>
+                <button
+                  onClick={() => setShowTaskModal(true)}
+                  className="flex items-center gap-2 bg-hf-blue hover:bg-blue-600 px-4 py-2 rounded-lg font-medium"
+                >
+                  <Plus size={18} />
+                  Add Task
+                </button>
+              </div>
             </div>
             
             {(() => {
@@ -1375,6 +1414,62 @@ export default function App() {
                       <p className="text-xs text-gray-500">all time</p>
                     </Card>
                   </div>
+                  
+                  {/* Today's Calendar */}
+                  <Card>
+                    <div className="flex items-center justify-between mb-4">
+                      <h3 className="text-lg font-bold">📅 Today's Schedule</h3>
+                      <button
+                        onClick={() => {
+                          const synced = syncCalendarToTasks()
+                          if (synced.length > 0) {
+                            setTasks([...tasks, ...synced])
+                          }
+                        }}
+                        className="text-sm text-hf-blue hover:text-white"
+                      >
+                        Sync to Tasks
+                      </button>
+                    </div>
+                    {calendarEvents.length === 0 ? (
+                      <p className="text-gray-400">No events scheduled for today.</p>
+                    ) : (
+                      <div className="space-y-2">
+                        {calendarEvents.map((event, i) => (
+                          <div key={i} className="flex items-center gap-4 p-3 bg-hf-dark rounded-lg">
+                            <div className="text-center min-w-[60px]">
+                              <p className="text-sm font-bold">
+                                {new Date(event.startTime).toLocaleTimeString('en-US', { hour: 'numeric', minute: '2-digit' })}
+                              </p>
+                              <p className="text-xs text-gray-500">{getTimeUntilEvent(event)}</p>
+                            </div>
+                            <div className="flex-1">
+                              <p className="font-medium">{event.title}</p>
+                              {event.isRecurring && (
+                                <span className="text-xs text-hf-blue">🔄 Recurring</span>
+                              )}
+                            </div>
+                            <button
+                              onClick={() => {
+                                const task = createTask({
+                                  title: `📅 ${event.title}`,
+                                  description: `Calendar event at ${new Date(event.startTime).toLocaleTimeString()}`,
+                                  priority: 'medium',
+                                  dueDate: event.startTime.split('T')[0],
+                                  tags: ['calendar'],
+                                  estimatedMinutes: Math.round((new Date(event.endTime).getTime() - new Date(event.startTime).getTime()) / (1000 * 60))
+                                })
+                                setTasks([...tasks, task])
+                              }}
+                              className="text-xs bg-hf-border/50 hover:bg-hf-blue px-3 py-1 rounded"
+                            >
+                              + Task
+                            </button>
+                          </div>
+                        ))}
+                      </div>
+                    )}
+                  </Card>
                   
                   {/* Focus Task */}
                   {focusTask && (
@@ -2516,6 +2611,160 @@ BTC,Bitcoin,0.5,42000,Crypto,crypto`}
                 </button>
               </div>
             </form>
+          </Card>
+        </div>
+      )}
+
+      {/* Recurring Tasks Modal */}
+      {showRecurringModal && (
+        <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-50">
+          <Card className="w-full max-w-lg">
+            <h3 className="text-lg font-bold mb-4">🔄 Recurring Tasks</h3>
+            <p className="text-sm text-gray-400 mb-4">Tasks that automatically repeat based on schedule</p>
+            
+            <div className="space-y-3 max-h-64 overflow-y-auto mb-4">
+              {recurringTemplates.length === 0 ? (
+                <p className="text-gray-400 text-center py-4">No recurring tasks set up yet.</p>
+              ) : (
+                recurringTemplates.map(template => (
+                  <div key={template.id} className="flex items-center justify-between p-3 bg-hf-dark rounded-lg">
+                    <div>
+                      <p className="font-medium">{template.title}</p>
+                      <p className="text-sm text-gray-400">
+                        {template.recurrencePattern} • {template.priority} priority
+                      </p>
+                    </div>
+                    <button
+                      onClick={() => {
+                        deleteRecurringTemplate(template.id)
+                        setRecurringTemplates(getRecurringTemplates())
+                      }}
+                      className="text-gray-500 hover:text-hf-red p-2"
+                    >
+                      <Trash2 size={18} />
+                    </button>
+                  </div>
+                ))
+              )}
+            </div>
+            
+            <form onSubmit={(e) => {
+              e.preventDefault()
+              const formData = new FormData(e.currentTarget)
+              saveRecurringTemplate({
+                title: formData.get('title') as string,
+                description: formData.get('description') as string,
+                priority: formData.get('priority') as Task['priority'],
+                tags: (formData.get('tags') as string).split(',').map(t => t.trim()).filter(Boolean),
+                recurrencePattern: formData.get('pattern') as RecurringTaskTemplate['recurrencePattern'],
+                startDate: new Date().toISOString().split('T')[0],
+                estimatedMinutes: Number(formData.get('estimatedMinutes')) || undefined
+              })
+              setRecurringTemplates(getRecurringTemplates())
+              e.currentTarget.reset()
+            }} className="border-t border-hf-border pt-4">
+              <p className="text-sm font-medium mb-3">Add New Recurring Task</p>
+              <div className="grid grid-cols-2 gap-3">
+                <input name="title" placeholder="Task name" className="bg-hf-dark border border-hf-border rounded-lg p-2" required />
+                <select name="pattern" className="bg-hf-dark border border-hf-border rounded-lg p-2">
+                  <option value="daily">Daily</option>
+                  <option value="weekdays">Weekdays only</option>
+                  <option value="weekly">Weekly</option>
+                  <option value="monthly">Monthly</option>
+                </select>
+              </div>
+              <div className="grid grid-cols-2 gap-3 mt-2">
+                <select name="priority" className="bg-hf-dark border border-hf-border rounded-lg p-2">
+                  <option value="low">Low Priority</option>
+                  <option value="medium">Medium Priority</option>
+                  <option value="high">High Priority</option>
+                  <option value="urgent">Urgent</option>
+                </select>
+                <input name="estimatedMinutes" type="number" placeholder="Minutes" className="bg-hf-dark border border-hf-border rounded-lg p-2" />
+              </div>
+              <input name="tags" placeholder="Tags (comma separated)" className="w-full bg-hf-dark border border-hf-border rounded-lg p-2 mt-2" />
+              <div className="flex gap-3 mt-4">
+                <button type="button" onClick={() => setShowRecurringModal(false)} className="flex-1 py-2 border border-hf-border rounded-lg hover:bg-hf-border">
+                  Close
+                </button>
+                <button type="submit" className="flex-1 py-2 bg-hf-blue hover:bg-blue-600 rounded-lg font-medium">
+                  Add Recurring
+                </button>
+              </div>
+            </form>
+          </Card>
+        </div>
+      )}
+
+      {/* Calendar Sync Modal */}
+      {showCalendarModal && (
+        <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-50">
+          <Card className="w-full max-w-lg">
+            <h3 className="text-lg font-bold mb-4">📅 Calendar Integration</h3>
+            <p className="text-sm text-gray-400 mb-4">Sync events from your calendars</p>
+            
+            <div className="space-y-3 mb-6">
+              {connectedCalendars.map(calendar => (
+                <div key={calendar.id} className="flex items-center justify-between p-3 bg-hf-dark rounded-lg">
+                  <div className="flex items-center gap-3">
+                    <div className="w-4 h-4 rounded" style={{ backgroundColor: calendar.color }}></div>
+                    <span>{calendar.name}</span>
+                  </div>
+                  <label className="flex items-center cursor-pointer">
+                    <input
+                      type="checkbox"
+                      checked={calendar.enabled}
+                      onChange={(e) => {
+                        const updated = connectedCalendars.map(c => 
+                          c.id === calendar.id ? { ...c, enabled: e.target.checked } : c
+                        )
+                        setConnectedCalendars(updated)
+                        saveConnectedCalendars(updated)
+                      }}
+                      className="sr-only"
+                    />
+                    <div className={`w-12 h-6 rounded-full transition-colors ${calendar.enabled ? 'bg-hf-green' : 'bg-hf-border'}`}>
+                      <div className={`w-5 h-5 bg-white rounded-full mt-0.5 transition-transform ${calendar.enabled ? 'translate-x-6' : 'translate-x-0.5'}`}></div>
+                    </div>
+                  </label>
+                </div>
+              ))}
+            </div>
+            
+            <div className="border-t border-hf-border pt-4">
+              <p className="text-sm font-medium mb-3">Upcoming Events</p>
+              <div className="space-y-2 max-h-48 overflow-y-auto">
+                {getUpcomingEvents().slice(0, 5).map((event, i) => (
+                  <div key={i} className="flex items-center gap-3 p-2 bg-hf-dark rounded text-sm">
+                    <span className="text-gray-400">
+                      {new Date(event.startTime).toLocaleDateString()} {new Date(event.startTime).toLocaleTimeString([], {hour: '2-digit', minute:'2-digit'})}
+                    </span>
+                    <span className="flex-1">{event.title}</span>
+                  </div>
+                ))}
+              </div>
+            </div>
+            
+            <div className="flex gap-3 mt-6">
+              <button 
+                onClick={() => setShowCalendarModal(false)} 
+                className="flex-1 py-2 border border-hf-border rounded-lg hover:bg-hf-border"
+              >
+                Close
+              </button>
+              <button 
+                onClick={() => {
+                  const synced = syncCalendarToTasks()
+                  if (synced.length > 0) {
+                    setTasks([...tasks, ...synced])
+                  }
+                  setShowCalendarModal(false)
+                }}
+                className="flex-1 py-2 bg-hf-blue hover:bg-blue-600 rounded-lg font-medium"
+              >
+                Sync Now
+              </button>
+            </div>
           </Card>
         </div>
       )}
