@@ -45,7 +45,7 @@ import {
   fetchICalFromUrl, getTodaysEvents as getTodaysICalEvents, getUpcomingEvents as getUpcomingICalEvents,
   iCalEventToTask, getTimeUntilEvent as getICalTimeUntilEvent, formatEventTime as formatICalEventTime,
   saveICalUrl, getICalUrl, clearICalData, saveICalEvents, getStoredICalEvents, shouldRefreshICal,
-  ICalEvent
+  parseICalData, ICalEvent
 } from './services/iCalParser'
 
 // Types
@@ -688,6 +688,30 @@ export default function App() {
       
       setPositions([...positions, ...newPositions])
       alert(`Successfully imported ${newPositions.length} positions!`)
+    }
+  }
+  
+  // Handle iCal file upload
+  const handleICalUpload = async (file: File) => {
+    try {
+      const text = await file.text()
+      console.log('Uploaded iCal file, size:', text.length)
+      const events = parseICalData(text)
+      console.log('Parsed events:', events.length)
+      
+      if (events.length === 0) {
+        alert('No events found in file. Make sure it\'s a valid .ics file.')
+        return
+      }
+      
+      setICalEvents(events)
+      saveICalEvents(events)
+      setCalendarSource('ical')
+      
+      const todayEvents = getTodaysICalEvents(events)
+      alert(`Success! Imported ${events.length} events. ${todayEvents.length} events today.`)
+    } catch (error) {
+      alert(`Failed to parse file: ${(error as Error).message}`)
     }
   }
   
@@ -2939,6 +2963,48 @@ BTC,Bitcoin,0.5,42000,Crypto,crypto`}
                   <p className="text-xs text-gray-500 mt-2">
                     Find it in Google Calendar → Settings → Integrate calendar → Secret address
                   </p>
+                </div>
+                
+                {/* Divider */}
+                <div className="flex items-center gap-4 my-4">
+                  <div className="flex-1 h-px bg-hf-border"></div>
+                  <span className="text-sm text-gray-500">OR</span>
+                  <div className="flex-1 h-px bg-hf-border"></div>
+                </div>
+                
+                {/* File Upload Option */}
+                <div className="bg-hf-dark rounded-lg p-4 mb-4">
+                  <p className="font-medium mb-2">📁 Upload .ics File</p>
+                  <p className="text-sm text-gray-400 mb-3">Export your calendar and upload the file</p>
+                  <div 
+                    className="border-2 border-dashed border-hf-border rounded-lg p-6 text-center hover:border-hf-blue cursor-pointer transition-colors"
+                    onClick={() => document.getElementById('ical-upload')?.click()}
+                    onDragOver={(e) => e.preventDefault()}
+                    onDrop={(e) => {
+                      e.preventDefault()
+                      const file = e.dataTransfer.files[0]
+                      if (file && file.name.endsWith('.ics')) {
+                        handleICalUpload(file)
+                      } else {
+                        alert('Please upload a .ics file')
+                      }
+                    }}
+                  >
+                    <p className="text-gray-400 mb-2">Click or drag .ics file here</p>
+                    <p className="text-xs text-gray-500">Export from Google Calendar Settings</p>
+                    <input 
+                      id="ical-upload" 
+                      type="file" 
+                      accept=".ics" 
+                      className="hidden"
+                      onChange={(e) => {
+                        const file = e.target.files?.[0]
+                        if (file) {
+                          handleICalUpload(file)
+                        }
+                      }}
+                    />
+                  </div>
                 </div>
                 
                 {/* Divider */}
