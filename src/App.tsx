@@ -25,6 +25,12 @@ import { analyzePortfolio, getInvestmentAdvice } from './services/aiAdvisor'
 import { getDividendSummary, getDividendCalendar, DividendEvent } from './services/dividendTracker'
 import { getEarningsCalendar, EarningsEvent, getEarningsImpactColor, getEarningsTimeLabel } from './services/earningsCalendar'
 import { downloadCsv, importFromCsv, downloadTemplate, CsvPosition } from './services/csvImportExport'
+import { 
+  Task, createTask, updateTaskStatus, getTasks, saveTasks, 
+  getTodaysTasks, getOverdueTasks, sortByPriority, getCompletionStats,
+  getSuggestedFocusTask, suggestTimeBlocks
+} from './services/taskManager'
+import { getPendingReminders, generateDailySummary, getFocusNotification } from './services/notifications'
 
 // Types
 interface Position {
@@ -309,7 +315,7 @@ export default function App() {
       return []
     }
   })
-  const [activeTab, setActiveTab] = useState<'overview' | 'positions' | 'analysis' | 'performance' | 'tax' | 'ai' | 'dividends' | 'earnings' | 'import' | 'news'>('overview')
+  const [activeTab, setActiveTab] = useState<'overview' | 'positions' | 'command' | 'analysis' | 'performance' | 'tax' | 'ai' | 'dividends' | 'earnings' | 'import' | 'news'>('overview')
   const [showAddModal, setShowAddModal] = useState(false)
   const [selectedPosition, setSelectedPosition] = useState<Position | null>(null)
   const [isRefreshing, setIsRefreshing] = useState(false)
@@ -328,6 +334,23 @@ export default function App() {
   // News state
   const [newsArticles, setNewsArticles] = useState<NewsArticle[]>([])
   const [newsFilter, setNewsFilter] = useState<'all' | 'holdings'>('all')
+  
+  // Tasks state
+  const [tasks, setTasks] = useState<Task[]>(() => {
+    try {
+      const saved = localStorage.getItem('mac-tasks')
+      return saved ? JSON.parse(saved) : []
+    } catch {
+      return []
+    }
+  })
+  const [showTaskModal, setShowTaskModal] = useState(false)
+  const [taskFilter, setTaskFilter] = useState<'all' | 'today' | 'overdue' | 'done'>('today')
+  
+  // Save tasks to localStorage
+  useEffect(() => {
+    localStorage.setItem('mac-tasks', JSON.stringify(tasks))
+  }, [tasks])
   
   // Save positions to localStorage whenever they change
   useEffect(() => {
@@ -619,6 +642,7 @@ export default function App() {
             {[
               { id: 'overview', label: 'Overview', icon: PieChart },
               { id: 'positions', label: 'Positions', icon: Wallet },
+              { id: 'command', label: 'Command Center', icon: Zap },
               { id: 'analysis', label: 'Analysis', icon: Activity },
               { id: 'performance', label: 'Performance', icon: BarChart3 },
               { id: 'tax', label: 'Tax Center', icon: Shield },
@@ -1068,6 +1092,211 @@ export default function App() {
                 </tbody>
               </table>
             </Card>
+          </div>
+        )}
+
+        {activeTab === 'command' && (
+          <div className="space-y-6">
+            <div className="flex items-center justify-between">
+              <div>
+                <h2 className="text-xl font-bold">🎯 Mac's Command Center</h2>
+                <p className="text-sm text-gray-400 mt-1">Tasks, Focus & Daily Planning</p>
+              </div>
+              <button
+                onClick={() => setShowTaskModal(true)}
+                className="flex items-center gap-2 bg-hf-blue hover:bg-blue-600 px-4 py-2 rounded-lg font-medium"
+              >
+                <Plus size={18} />
+                Add Task
+              </button>
+            </div>
+            
+            {(() => {
+              const todaysTasks = getTodaysTasks()
+              const overdue = getOverdueTasks()
+              const stats = getCompletionStats()
+              const focusTask = getSuggestedFocusTask()
+              const filteredTasks = taskFilter === 'all' ? tasks :
+                taskFilter === 'today' ? todaysTasks :
+                taskFilter === 'overdue' ? overdue :
+                tasks.filter(t => t.status === 'done')
+              const sortedTasks = sortByPriority(filteredTasks)
+              
+              return (
+                <>
+                  {/* Stats Overview */}
+                  <div className="grid grid-cols-1 md:grid-cols-4 gap-6">
+                    <Card>
+                      <p className="text-sm text-gray-400">Today's Tasks</p>
+                      <p className="text-2xl font-bold mt-1">{todaysTasks.filter(t => t.status !== 'done').length}</p>
+                      <p className="text-xs text-gray-500">{todaysTasks.filter(t => t.status === 'done').length} completed</p>
+                    </Card>
+                    <Card>
+                      <p className="text-sm text-gray-400">Overdue</p>
+                      <p className={`text-2xl font-bold mt-1 ${overdue.length > 0 ? 'text-hf-red' : ''}`}>{overdue.length}</p>
+                      <p className="text-xs text-gray-500">needs attention</p>
+                    </Card>
+                    <Card>
+                      <p className="text-sm text-gray-400">Weekly Done</p>
+                      <p className="text-2xl font-bold mt-1 text-hf-green">{stats.week}</p>
+                      <p className="text-xs text-gray-500">tasks completed</p>
+                    </Card>
+                    <Card>
+                      <p className="text-sm text-gray-400">Completion Rate</p>
+                      <p className="text-2xl font-bold mt-1">
+                        {tasks.length > 0 ? Math.round((tasks.filter(t => t.status === 'done').length / tasks.length) * 100) : 0}%
+                      </p>
+                      <p className="text-xs text-gray-500">all time</p>
+                    </Card>
+                  </div>
+                  
+                  {/* Focus Task */}
+                  {focusTask && (
+                    <Card className="border-hf-gold/50 bg-hf-gold/5">
+                      <div className="flex items-center justify-between">
+                        <div>
+                          <p className="text-sm text-hf-gold font-medium mb-1">🎯 FOCUS TASK</p>
+                          <h3 className="text-xl font-bold">{focusTask.title}</h3>
+                          {focusTask.description && (
+                            <p className="text-gray-400 mt-1">{focusTask.description}</p>
+                          )}
+                          <div className="flex items-center gap-3 mt-3">
+                            <span className={`text-xs px-2 py-1 rounded ${
+                              focusTask.priority === 'urgent' ? 'bg-hf-red text-white' :
+                              focusTask.priority === 'high' ? 'bg-hf-gold text-black' :
+                              focusTask.priority === 'medium' ? 'bg-hf-blue text-white' :
+                              'bg-gray-600 text-white'
+                            }`}>
+                              {focusTask.priority.toUpperCase()}
+                            </span>
+                            {focusTask.dueDate && (
+                              <span className="text-sm text-gray-400">Due: {focusTask.dueDate}</span>
+                            )}
+                          </div>
+                        </div>
+                        <button
+                          onClick={() => {
+                            setTasks(tasks.map(t => t.id === focusTask.id ? { ...t, status: 'done', completedAt: new Date().toISOString() } : t))
+                          }}
+                          className="bg-hf-green hover:bg-green-600 text-black px-6 py-3 rounded-lg font-bold"
+                        >
+                          ✓ Complete
+                        </button>
+                      </div>
+                    </Card>
+                  )}
+                  
+                  {/* Filter Tabs */}
+                  <div className="flex items-center gap-2">
+                    {(['today', 'all', 'overdue', 'done'] as const).map(filter => (
+                      <button
+                        key={filter}
+                        onClick={() => setTaskFilter(filter)}
+                        className={`px-4 py-2 rounded-lg font-medium capitalize ${
+                          taskFilter === filter 
+                            ? 'bg-hf-blue text-white' 
+                            : 'bg-hf-card border border-hf-border hover:border-hf-blue'
+                        }`}
+                      >
+                        {filter}
+                        {filter === 'overdue' && overdue.length > 0 && (
+                          <span className="ml-2 bg-hf-red text-white text-xs px-2 py-0.5 rounded-full">{overdue.length}</span>
+                        )}
+                      </button>
+                    ))}
+                  </div>
+                  
+                  {/* Task List */}
+                  <Card>
+                    <h3 className="text-lg font-bold mb-4">
+                      {taskFilter === 'today' ? "Today's Tasks" :
+                       taskFilter === 'overdue' ? 'Overdue Tasks' :
+                       taskFilter === 'done' ? 'Completed Tasks' :
+                       'All Tasks'}
+                    </h3>
+                    
+                    {sortedTasks.length === 0 ? (
+                      <div className="text-center py-8 text-gray-400">
+                        <p className="text-4xl mb-2">🎉</p>
+                        <p>No tasks here! You're all caught up.</p>
+                      </div>
+                    ) : (
+                      <div className="space-y-2">
+                        {sortedTasks.map(task => (
+                          <div 
+                            key={task.id} 
+                            className={`flex items-center gap-4 p-4 rounded-lg border ${
+                              task.status === 'done' ? 'bg-hf-border/20 opacity-60' :
+                              task.priority === 'urgent' ? 'bg-hf-red/10 border-hf-red/30' :
+                              task.priority === 'high' ? 'bg-hf-gold/10 border-hf-gold/30' :
+                              'bg-hf-dark border-hf-border'
+                            }`}
+                          >
+                            <button
+                              onClick={() => {
+                                const newStatus = task.status === 'done' ? 'todo' : 'done'
+                                setTasks(tasks.map(t => t.id === task.id ? { 
+                                  ...t, 
+                                  status: newStatus,
+                                  completedAt: newStatus === 'done' ? new Date().toISOString() : undefined
+                                } : t))
+                              }}
+                              className={`w-6 h-6 rounded border-2 flex items-center justify-center ${
+                                task.status === 'done' 
+                                  ? 'bg-hf-green border-hf-green' 
+                                  : 'border-gray-500 hover:border-hf-blue'
+                              }`}
+                            >
+                              {task.status === 'done' && <span className="text-black text-sm">✓</span>}
+                            </button>
+                            
+                            <div className="flex-1">
+                              <p className={`font-medium ${task.status === 'done' ? 'line-through text-gray-500' : ''}`}>
+                                {task.title}
+                              </p>
+                              {task.description && (
+                                <p className="text-sm text-gray-400">{task.description}</p>
+                              )}
+                              <div className="flex items-center gap-2 mt-1">
+                                <span className={`text-xs px-2 py-0.5 rounded ${
+                                  task.priority === 'urgent' ? 'bg-hf-red text-white' :
+                                  task.priority === 'high' ? 'bg-hf-gold text-black' :
+                                  task.priority === 'medium' ? 'bg-hf-blue text-white' :
+                                  'bg-gray-600 text-white'
+                                }`}>
+                                  {task.priority}
+                                </span>
+                                {task.dueDate && (
+                                  <span className={`text-xs ${
+                                    task.dueDate < new Date().toISOString().split('T')[0] 
+                                      ? 'text-hf-red' 
+                                      : 'text-gray-400'
+                                  }`}>
+                                    {task.dueDate}
+                                  </span>
+                                )}
+                                {task.tags.map(tag => (
+                                  <span key={tag} className="text-xs bg-hf-border px-2 py-0.5 rounded text-gray-400">
+                                    #{tag}
+                                  </span>
+                                ))}
+                              </div>
+                            </div>
+                            
+                            <button
+                              onClick={() => setTasks(tasks.filter(t => t.id !== task.id))}
+                              className="text-gray-500 hover:text-hf-red p-2"
+                            >
+                              <Trash2 size={18} />
+                            </button>
+                          </div>
+                        ))}
+                      </div>
+                    )}
+                  </Card>
+                </>
+              )
+            })()}
           </div>
         )}
 
@@ -1993,6 +2222,71 @@ BTC,Bitcoin,0.5,42000,Crypto,crypto`}
                 </button>
                 <button type="submit" className="flex-1 py-2 bg-hf-blue hover:bg-blue-600 rounded-lg font-medium transition-colors">
                   Set Alert
+                </button>
+              </div>
+            </form>
+          </Card>
+        </div>
+      )}
+
+      {/* Add Task Modal */}
+      {showTaskModal && (
+        <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-50">
+          <Card className="w-full max-w-md">
+            <h3 className="text-lg font-bold mb-4">Add New Task</h3>
+            <form onSubmit={(e) => {
+              e.preventDefault()
+              const formData = new FormData(e.currentTarget)
+              const newTask = createTask({
+                title: formData.get('title') as string,
+                description: formData.get('description') as string,
+                priority: formData.get('priority') as Task['priority'],
+                dueDate: formData.get('dueDate') as string,
+                tags: (formData.get('tags') as string).split(',').map(t => t.trim()).filter(Boolean),
+                estimatedMinutes: Number(formData.get('estimatedMinutes')) || undefined
+              })
+              setTasks([...tasks, newTask])
+              setShowTaskModal(false)
+            }} className="space-y-4">
+              <div>
+                <label className="text-sm text-gray-400">Task Title *</label>
+                <input name="title" className="w-full bg-hf-dark border border-hf-border rounded-lg p-2 mt-1" placeholder="What needs to be done?" required />
+              </div>
+              <div>
+                <label className="text-sm text-gray-400">Description</label>
+                <textarea name="description" className="w-full bg-hf-dark border border-hf-border rounded-lg p-2 mt-1 h-20" placeholder="Add details..." />
+              </div>
+              <div className="grid grid-cols-2 gap-4">
+                <div>
+                  <label className="text-sm text-gray-400">Priority</label>
+                  <select name="priority" className="w-full bg-hf-dark border border-hf-border rounded-lg p-2 mt-1">
+                    <option value="low">Low</option>
+                    <option value="medium">Medium</option>
+                    <option value="high">High</option>
+                    <option value="urgent">Urgent</option>
+                  </select>
+                </div>
+                <div>
+                  <label className="text-sm text-gray-400">Due Date</label>
+                  <input name="dueDate" type="date" className="w-full bg-hf-dark border border-hf-border rounded-lg p-2 mt-1" />
+                </div>
+              </div>
+              <div className="grid grid-cols-2 gap-4">
+                <div>
+                  <label className="text-sm text-gray-400">Tags (comma separated)</label>
+                  <input name="tags" className="w-full bg-hf-dark border border-hf-border rounded-lg p-2 mt-1" placeholder="work, personal, urgent" />
+                </div>
+                <div>
+                  <label className="text-sm text-gray-400">Est. Minutes</label>
+                  <input name="estimatedMinutes" type="number" className="w-full bg-hf-dark border border-hf-border rounded-lg p-2 mt-1" placeholder="e.g., 30" />
+                </div>
+              </div>
+              <div className="flex gap-3 pt-4">
+                <button type="button" onClick={() => setShowTaskModal(false)} className="flex-1 py-2 border border-hf-border rounded-lg hover:bg-hf-border transition-colors">
+                  Cancel
+                </button>
+                <button type="submit" className="flex-1 py-2 bg-hf-green hover:bg-green-600 text-black rounded-lg font-medium transition-colors">
+                  Add Task
                 </button>
               </div>
             </form>
