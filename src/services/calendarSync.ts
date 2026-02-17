@@ -14,7 +14,7 @@ export interface CalendarEvent {
 // Google OAuth Configuration
 const CLIENT_ID = '86434463384-s26qpi8jejpgnqb1fduqq0dhmcf72qr2.apps.googleusercontent.com'
 const CLIENT_SECRET = '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'
-const REDIRECT_URI = typeof window !== 'undefined' ? window.location.origin : 'https://alpha-forge-kfu7.vercel.app'
+const REDIRECT_URI = typeof window !== 'undefined' ? window.location.origin + '/' : 'https://alpha-forge-kfu7.vercel.app/'
 const SCOPES = 'https://www.googleapis.com/auth/calendar.readonly'
 
 // Token storage
