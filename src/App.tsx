@@ -121,7 +121,7 @@ const SECTOR_DATA = [
 
 // Components
 const Card: React.FC<{ children: React.ReactNode; className?: string }> = ({ children, className = '' }) => (
-  <div className={`bg-hf-card border border-hf-border rounded-xl p-6 ${className}`}>
+  <div className={`bg-hf-card border border-hf-border rounded-xl p-4 sm:p-6 ${className}`}>
     {children}
   </div>
 )
@@ -130,15 +130,15 @@ const Metric: React.FC<{ label: string; value: string; change?: number; prefix?:
   label, value, change, prefix = '', noData = false
 }) => (
   <div>
-    <p className="text-gray-400 text-sm">{label}</p>
+    <p className="text-gray-400 text-xs sm:text-sm">{label}</p>
     {noData ? (
-      <p className="text-2xl font-bold mt-1 text-gray-600">No Data</p>
+      <p className="text-lg sm:text-2xl font-bold mt-1 text-gray-600">No Data</p>
     ) : (
-      <p className="text-2xl font-bold mt-1">{prefix}{value}</p>
+      <p className="text-lg sm:text-2xl font-bold mt-1">{prefix}{value}</p>
     )}
     {change !== undefined && !noData && (
-      <div className={`flex items-center gap-1 mt-1 text-sm ${change >= 0 ? 'text-hf-green' : 'text-hf-red'}`}>
-        {change >= 0 ? <ArrowUpRight size={16} /> : <ArrowDownRight size={16} />}
+      <div className={`flex items-center gap-1 mt-1 text-xs sm:text-sm ${change >= 0 ? 'text-hf-green' : 'text-hf-red'}`}>
+        {change >= 0 ? <ArrowUpRight size={14} className="sm:w-4 sm:h-4" /> : <ArrowDownRight size={14} className="sm:w-4 sm:h-4" />}
         <span>{change >= 0 ? '+' : ''}{change.toFixed(2)}%</span>
       </div>
     )}
@@ -390,6 +390,9 @@ export default function App() {
     if (getICalUrl()) return 'ical'
     return 'none'
   })
+  
+  // Mobile menu state
+  const [mobileMenuOpen, setMobileMenuOpen] = useState(false)
   
   // Initialize recurring tasks and check calendar auth on mount
   useEffect(() => {
@@ -858,18 +861,21 @@ export default function App() {
     <div className="min-h-screen bg-hf-dark">
       {/* Header */}
       <header className="border-b border-hf-border bg-hf-card">
-        <div className="max-w-7xl mx-auto px-6 py-4">
+        <div className="max-w-7xl mx-auto px-4 sm:px-6 py-3 sm:py-4">
           <div className="flex items-center justify-between">
-            <div className="flex items-center gap-3">
-              <div className="w-10 h-10 bg-gradient-to-br from-hf-blue to-hf-green rounded-lg flex items-center justify-center">
-                <TrendingUp className="text-white" size={24} />
+            {/* Logo */}
+            <div className="flex items-center gap-2 sm:gap-3">
+              <div className="w-8 h-8 sm:w-10 sm:h-10 bg-gradient-to-br from-hf-blue to-hf-green rounded-lg flex items-center justify-center">
+                <TrendingUp className="text-white" size={20} />
               </div>
               <div>
-                <h1 className="text-xl font-bold">ALPHA FORGE</h1>
-                <p className="text-xs text-gray-400">Quantitative Strategy Dashboard</p>
+                <h1 className="text-lg sm:text-xl font-bold">ALPHA FORGE</h1>
+                <p className="hidden sm:block text-xs text-gray-400">Quantitative Strategy Dashboard</p>
               </div>
             </div>
-            <div className="flex items-center gap-4">
+            
+            {/* Desktop Actions */}
+            <div className="hidden md:flex items-center gap-4">
               {/* WebSocket Status Badge */}
               <div className={`px-3 py-1 rounded-full text-xs font-medium flex items-center gap-1 ${
                 wsStatus === 'connected' ? 'bg-hf-green/20 text-hf-green' : 
@@ -890,7 +896,7 @@ export default function App() {
                 onClick={refreshPrices}
                 disabled={isRefreshing}
                 className="p-2 hover:bg-hf-border rounded-lg disabled:opacity-50"
-                title="Refresh Prices (Finnhub)"
+                title="Refresh Prices"
               >
                 <RefreshCw size={20} className={isRefreshing ? 'animate-spin' : ''} />
               </button>
@@ -916,22 +922,139 @@ export default function App() {
                 {hasPriceData ? (
                   <>
                     <p className="text-xl font-bold">${totalValue.toLocaleString('en-US', { minimumFractionDigits: 2 })}</p>
-                    <p className="text-xs text-gray-500">Updated: {lastUpdate?.toLocaleTimeString()}</p>
+                    <p className="text-xs text-gray-500">Updated: {lastUpdate?.toLocaleTimeString([], {hour: 'numeric', minute: '2-digit'})}</p>
                   </>
                 ) : (
                   <>
                     <p className="text-xl font-bold text-gray-600">No Data</p>
-                    <p className="text-xs text-gray-500">Click refresh to fetch</p>
+                    <p className="text-xs text-gray-500">Click refresh</p>
                   </>
                 )}
               </div>
             </div>
+            
+            {/* Mobile Actions */}
+            <div className="flex md:hidden items-center gap-2">
+              <button 
+                onClick={refreshPrices}
+                disabled={isRefreshing}
+                className="p-2 hover:bg-hf-border rounded-lg disabled:opacity-50"
+              >
+                <RefreshCw size={20} className={isRefreshing ? 'animate-spin' : ''} />
+              </button>
+              
+              <button 
+                onClick={handleLock}
+                className="p-2 hover:bg-hf-border rounded-lg text-gray-400"
+              >
+                <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
+                  <rect x="3" y="11" width="18" height="11" rx="2" ry="2"></rect>
+                  <path d="M7 11V7a5 5 0 0 1 10 0v4"></path>
+                </svg>
+              </button>
+              
+              {/* Mobile Menu Toggle */}
+              <button 
+                onClick={() => setMobileMenuOpen(!mobileMenuOpen)}
+                className="p-2 hover:bg-hf-border rounded-lg"
+              >
+                <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
+                  {mobileMenuOpen ? (
+                    <path d="M6 18L18 6M6 6l12 12" />
+                  ) : (
+                    <><path d="M3 12h18M3 6h18M3 18h18" /></>
+                  )}
+                </svg>
+              </button>
+            </div>
+          </div>
+          
+          {/* Mobile Portfolio Value */}
+          <div className="md:hidden mt-3 pt-3 border-t border-hf-border">
+            <div className="flex items-center justify-between">
+              <span className="text-sm text-gray-400">Portfolio</span>
+              {hasPriceData ? (
+                <span className="text-lg font-bold">${totalValue.toLocaleString('en-US', { minimumFractionDigits: 0, maximumFractionDigits: 0 })}</span>
+              ) : (
+                <span className="text-lg font-bold text-gray-600">No Data</span>
+              )}
+            </div>
+            {hasPriceData && lastUpdate && (
+              <p className="text-xs text-gray-500 mt-1 text-right">
+                Updated: {lastUpdate.toLocaleTimeString([], {hour: 'numeric', minute: '2-digit'})}
+              </p>
+            )}
           </div>
         </div>
       </header>
 
-      {/* Navigation */}
-      <nav className="border-b border-hf-border">
+      {/* Mobile Navigation Menu */}
+      {mobileMenuOpen && (
+        <div className="md:hidden fixed inset-0 top-[120px] bg-hf-dark/95 backdrop-blur-sm z-40 overflow-y-auto">
+          <div className="p-4 space-y-2">
+            <button
+              onClick={() => { setActiveTab('overview'); setMobileMenuOpen(false); }}
+              className={`w-full flex items-center gap-3 p-4 rounded-lg ${
+                activeTab === 'overview' ? 'bg-hf-blue text-white' : 'bg-hf-card text-gray-300'
+              }`}
+            >
+              <PieChart size={24} />
+              <span className="font-medium text-lg">Overview</span>
+            </button>
+            
+            <button
+              onClick={() => { setActiveTab('command'); setMobileMenuOpen(false); }}
+              className={`w-full flex items-center gap-3 p-4 rounded-lg ${
+                activeTab === 'command' ? 'bg-hf-gold text-black' : 'bg-hf-card text-gray-300'
+              }`}
+            >
+              <Zap size={24} />
+              <span className="font-medium text-lg">Command Center</span>
+            </button>
+            
+            <div className="border-t border-hf-border my-2"></div>
+            
+            <p className="text-xs text-gray-500 uppercase px-4">Financial Tools</p>
+            
+            {[
+              { id: 'positions', label: 'Positions', icon: Wallet },
+              { id: 'analysis', label: 'Analysis', icon: Activity },
+              { id: 'performance', label: 'Performance', icon: BarChart3 },
+              { id: 'dividends', label: 'Dividends', icon: Wallet },
+              { id: 'earnings', label: 'Earnings', icon: Activity },
+              { id: 'tax', label: 'Tax Center', icon: Shield },
+              { id: 'ai', label: 'AI Advisor', icon: Zap },
+              { id: 'import', label: 'Import/Export', icon: Globe },
+            ].map(({ id, label, icon: Icon }) => (
+              <button
+                key={id}
+                onClick={() => { setActiveTab(id as any); setMobileMenuOpen(false); }}
+                className={`w-full flex items-center gap-3 p-3 rounded-lg ${
+                  activeTab === id ? 'bg-hf-green/20 text-hf-green' : 'bg-hf-card text-gray-300'
+                }`}
+              >
+                <Icon size={20} />
+                <span>{label}</span>
+              </button>
+            ))}
+            
+            <div className="border-t border-hf-border my-2"></div>
+            
+            <button
+              onClick={() => { setActiveTab('news'); setMobileMenuOpen(false); }}
+              className={`w-full flex items-center gap-3 p-4 rounded-lg ${
+                activeTab === 'news' ? 'bg-hf-blue text-white' : 'bg-hf-card text-gray-300'
+              }`}
+            >
+              <Globe size={24} />
+              <span className="font-medium text-lg">News</span>
+            </button>
+          </div>
+        </div>
+      )}
+
+      {/* Desktop Navigation */}
+      <nav className="hidden md:block border-b border-hf-border">
         <div className="max-w-7xl mx-auto px-6">
           <div className="flex gap-6">
             {/* Main Tabs */}
@@ -1061,21 +1184,21 @@ export default function App() {
       </nav>
 
       {/* Main Content */}
-      <main className="max-w-7xl mx-auto px-6 py-8">
+      <main className="max-w-7xl mx-auto px-4 sm:px-6 py-4 sm:py-8 pb-24 md:pb-8">
         {activeTab === 'overview' && (
           <div className="space-y-6">
             {/* Fetch Real Prices Banner */}
             {!lastUpdate && !isRefreshing && (
               <Card className="bg-gradient-to-r from-hf-blue/20 to-hf-green/20 border-hf-blue">
-                <div className="flex items-center justify-between">
-                  <div>
+                <div className="flex flex-col sm:flex-row items-start sm:items-center justify-between gap-4">
+                  <div className="flex-1">
                     <h3 className="font-bold text-lg">🚀 Fetch Real-Time Prices</h3>
-                    <p className="text-sm text-gray-400">No price data available. Click to fetch live prices from Finnhub (real-time streaming).</p>
+                    <p className="text-sm text-gray-400 mt-1">No price data available. Click to fetch live prices from Finnhub.</p>
                     {refreshError && <p className="text-sm text-hf-red mt-1">{refreshError}</p>}
                   </div>
                   <button 
                     onClick={refreshPrices}
-                    className="bg-hf-blue hover:bg-blue-600 px-6 py-3 rounded-lg font-bold flex items-center gap-2"
+                    className="w-full sm:w-auto bg-hf-blue hover:bg-blue-600 px-6 py-3 rounded-lg font-bold flex items-center justify-center gap-2"
                   >
                     <RefreshCw size={18} />
                     Fetch Live Prices
@@ -1094,8 +1217,8 @@ export default function App() {
             )}
 
             {/* Key Metrics */}
-            <div className="grid grid-cols-1 md:grid-cols-4 gap-6">
-              <Card>
+            <div className="grid grid-cols-2 md:grid-cols-4 gap-3 sm:gap-6">
+              <Card className="p-4 sm:p-6">
                 <Metric 
                   label="Total Value" 
                   value={totalValue.toLocaleString('en-US', { minimumFractionDigits: 2 })} 
