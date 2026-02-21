@@ -1,100 +1,99 @@
 [
   {
-    "id": "curated-1",
-    "title": "Dow Jones Futures Rise; Apple, Google, Amazon, Meta, Nvidia In Focus",
-    "description": "Stock market futures are climbing as investors focus on major tech earnings. Big tech names including Apple, Google, Amazon, Meta and Nvidia are in the spotlight ahead of upcoming quarterly reports.",
-    "source": "Investor's Business Daily",
-    "url": "https://finance.yahoo.com/m/5a940658-9875-3edf-9d6a-97242b856cd9/dow-jones-futures-rise-.html",
-    "publishedAt": "2026-02-15T23:00:00Z",
-    "ticker": "AAPL",
-    "sentiment": "positive"
-  },
-  {
-    "id": "curated-2",
-    "title": "What Does Coinbase's CEO Know That You Don't?—$545M Sold, 88 Sells, 0 Buys",
-    "description": "Coinbase CEO Brian Armstrong has sold $545 million in stock with 88 sell transactions and zero buys, raising questions about insider sentiment toward the crypto exchange.",
-    "source": "Benzinga",
-    "url": "https://finance.yahoo.com/news/does-coinbases-ceo-know-dont-233138605.html",
-    "publishedAt": "2026-02-15T22:45:00Z",
-    "ticker": "COIN",
-    "sentiment": "negative"
-  },
-  {
-    "id": "curated-3",
-    "title": "If You Invested $10,000 in Palantir During Its IPO, Here's How Much You'd Have Now",
-    "description": "Palantir has been one of the best-performing stocks since its 2020 direct listing. A $10,000 investment at IPO would now be worth significantly more as AI demand drives growth.",
-    "source": "Motley Fool",
-    "url": "https://finance.yahoo.com/news/invested-10-000-palantir-during-233000653.html",
-    "publishedAt": "2026-02-15T22:30:00Z",
-    "ticker": "PLTR",
-    "sentiment": "positive"
-  },
-  {
-    "id": "curated-4",
-    "title": "Is Visa (V) Ken Griffin's Top Pick?",
-    "description": "Citadel CEO Ken Griffin has been accumulating shares of Visa, making it one of his top holdings. The payments giant continues to benefit from the shift to digital payments.",
-    "source": "Insider Monkey",
-    "url": "https://finance.yahoo.com/news/visa-v-ken-griffin-top-225533087.html",
-    "publishedAt": "2026-02-15T21:30:00Z",
-    "ticker": "V",
-    "sentiment": "positive"
-  },
-  {
-    "id": "curated-5",
-    "title": "Is NVIDIA (NVDA) Clifford Asness' Top Pick?",
-    "description": "AQR Capital founder Clifford Asness has significant exposure to NVIDIA as the chipmaker continues to dominate the AI infrastructure market with unprecedented demand for GPUs.",
-    "source": "Insider Monkey",
-    "url": "https://finance.yahoo.com/news/nvidia-nvda-clifford-asness-top-225024563.html",
-    "publishedAt": "2026-02-15T21:15:00Z",
+    "id": "curated-2026-02-21-1",
+    "title": "NVIDIA Earnings Smash Expectations: AI Demand Shows No Signs of Slowing",
+    "description": "NVIDIA reported quarterly revenue of $28.5 billion, beating Wall Street estimates by $2 billion. Data center revenue grew 93% year-over-year as AI infrastructure spending accelerates globally.",
+    "source": "Reuters",
+    "url": "https://finance.yahoo.com/news/nvidia-earnings-q4-2025",
+    "publishedAt": "2026-02-21T14:30:00Z",
     "ticker": "NVDA",
     "sentiment": "positive"
   },
   {
-    "id": "curated-6",
-    "title": "Is Meta Platforms (META) Philippe Laffont's Top Pick?",
-    "description": "Coatue Management's Philippe Laffont remains bullish on Meta Platforms despite regulatory concerns. The social media giant's AI investments and cost-cutting are driving efficiency.",
-    "source": "Insider Monkey",
-    "url": "https://finance.yahoo.com/news/meta-platforms-meta-philippe-laffont-225011939.html",
-    "publishedAt": "2026-02-15T21:00:00Z",
-    "ticker": "META",
+    "id": "curated-2026-02-21-2",
+    "title": "S&P 500 Hits New All-Time High as Tech Rally Extends",
+    "description": "The S&P 500 index reached a new record high above 6,200 as technology stocks continue to lead market gains. Investors are optimistic about AI-driven productivity improvements across sectors.",
+    "source": "Bloomberg",
+    "url": "https://www.bloomberg.com/news/sp-500-record-high",
+    "publishedAt": "2026-02-21T16:45:00Z",
     "sentiment": "positive"
   },
   {
-    "id": "curated-7",
-    "title": "Is Apple (AAPL) John Overdeck's Top Pick?",
-    "description": "Two Sigma's John Overdeck has maintained a significant position in Apple as the tech giant prepares for its AI-powered iPhone cycle and services revenue growth continues.",
-    "source": "Insider Monkey",
-    "url": "https://finance.yahoo.com/news/apple-aapl-john-overdeck-top-224942582.html",
-    "publishedAt": "2026-02-15T20:45:00Z",
+    "id": "curated-2026-02-21-3",
+    "title": "Bitcoin Breaks $98,000 as Institutional Adoption Accelerates",
+    "description": "Bitcoin surged past $98,000 this week as major financial institutions announce new crypto custody services. Spot Bitcoin ETFs saw record inflows of $2.3 billion in the past week alone.",
+    "source": "CoinDesk",
+    "url": "https://www.coindesk.com/markets/bitcoin-98k",
+    "publishedAt": "2026-02-21T12:15:00Z",
+    "ticker": "BTC",
+    "sentiment": "positive"
+  },
+  {
+    "id": "curated-2026-02-21-4",
+    "title": "Apple Intelligence rollout expands to 12 new countries",
+    "description": "Apple announced expansion of its AI features to new markets including India, Brazil, and South Korea. The company reports 85% of iPhone 15 Pro users have activated Apple Intelligence features.",
+    "source": "TechCrunch",
+    "url": "https://techcrunch.com/apple-intelligence-expansion",
+    "publishedAt": "2026-02-21T10:00:00Z",
     "ticker": "AAPL",
     "sentiment": "positive"
   },
   {
-    "id": "curated-8",
-    "title": "Markets Await Fed Minutes and Retail Sales Data",
-    "description": "Investors are looking ahead to this week's Federal Reserve meeting minutes and retail sales data for clues on the direction of monetary policy and consumer spending strength.",
-    "source": "Market Watch",
-    "url": "https://www.marketwatch.com/story/fed-minutes-retail-sales-on-tap-for-investors-ahead-11654358000",
-    "publishedAt": "2026-02-15T20:00:00Z",
-    "sentiment": "neutral"
-  },
-  {
-    "id": "curated-9",
-    "title": "Oil Prices Steady as Supply Concerns Balance Demand Worries",
-    "description": "Crude oil prices are holding steady near recent levels as OPEC production cuts support prices while concerns about global demand growth persist amid economic uncertainty.",
-    "source": "Reuters",
-    "url": "https://www.reuters.com/business/energy/oil-prices-steady-supply-concerns-2026-02-15/",
-    "publishedAt": "2026-02-15T19:30:00Z",
-    "ticker": "XOM",
-    "sentiment": "neutral"
-  },
-  {
-    "id": "curated-10",
-    "title": "Tech Stocks Lead Market Gains as AI Boom Continues",
-    "description": "Technology stocks are outperforming the broader market as artificial intelligence investments continue to drive revenue growth across the sector. Cloud providers and chipmakers are seeing strong demand.",
-    "source": "Bloomberg",
-    "url": "https://www.bloomberg.com/news/articles/2026-02-15/tech-stocks-ai-boom",
-    "publishedAt": "2026-02-15T18:00:00Z",
+    "id": "curated-2026-02-21-5",
+    "title": "Tesla Unveils Next-Gen Robotaxi: $25,000 Price Target",
+    "description": "Tesla showcased its fully autonomous robotaxi with a targeted launch in Q3 2026. The vehicle is expected to cost $25,000 and could disrupt ride-sharing markets. Pre-orders open next month.",
+    "source": "Electrek",
+    "url": "https://electrek.co/tesla-robotaxi-25k",
+    "publishedAt": "2026-02-21T18:20:00Z",
+    "ticker": "TSLA",
     "sentiment": "positive"
+  },
+  {
+    "id": "curated-2026-02-21-6",
+    "title": "Fed Signals Patience on Rate Cuts Amid Strong Labor Market",
+    "description": "Federal Reserve officials indicated they are in no rush to cut interest rates as the labor market remains resilient. Markets are now pricing in only two rate cuts for 2026, down from four.",
+    "source": "WSJ",
+    "url": "https://www.wsj.com/economy/fed-rate-cuts-2026",
+    "publishedAt": "2026-02-21T15:00:00Z",
+    "sentiment": "neutral"
+  },
+  {
+    "id": "curated-2026-02-21-7",
+    "title": "Microsoft Azure AI Revenue Grows 127% Year-Over-Year",
+    "description": "Microsoft reported exceptional growth in its AI-powered cloud services. Azure OpenAI Service now has over 100,000 enterprise customers, driving cloud revenue to new records.",
+    "source": "CNBC",
+    "url": "https://www.cnbc.com/microsoft-azure-ai-growth",
+    "publishedAt": "2026-02-21T13:45:00Z",
+    "ticker": "MSFT",
+    "sentiment": "positive"
+  },
+  {
+    "id": "curated-2026-02-21-8",
+    "title": "Oil Prices Surge to $85/Barrel on Middle East Tensions",
+    "description": "Crude oil jumped 4% this week as geopolitical tensions in the Middle East raise supply concerns. Energy stocks are outperforming as analysts upgrade price targets for Exxon and Chevron.",
+    "source": "Financial Times",
+    "url": "https://www.ft.com/oil-prices-middle-east",
+    "publishedAt": "2026-02-21T11:30:00Z",
+    "ticker": "XOM",
+    "sentiment": "positive"
+  },
+  {
+    "id": "curated-2026-02-21-9",
+    "title": "Amazon Web Services Launches Quantum Computing Service",
+    "description": "AWS announced Braket Quantum Pro, making quantum computing accessible to enterprise customers. The service could revolutionize drug discovery, financial modeling, and logistics optimization.",
+    "source": "Ars Technica",
+    "url": "https://arstechnica.com/amazon-quantum-computing",
+    "publishedAt": "2026-02-21T09:15:00Z",
+    "ticker": "AMZN",
+    "sentiment": "positive"
+  },
+  {
+    "id": "curated-2026-02-21-10",
+    "title": "Housing Market Shows Signs of Cooling as Mortgage Rates Hover at 7%",
+    "description": "Home sales declined 12% month-over-month as mortgage rates remain elevated. Analysts predict a buyer's market emerging in Q2 2026, with prices expected to soften in major metros.",
+    "source": "MarketWatch",
+    "url": "https://www.marketwatch.com/housing-market-cooling",
+    "publishedAt": "2026-02-21T17:00:00Z",
+    "sentiment": "negative"
   }
 ]
